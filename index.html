@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#123B2A">
+<title>Expense Manager</title>
+<style>
+:root{
+  --paper:#F6F3EA; --card:#FFFFFF; --ink:#1C2B24; --mut:#6B7A72;
+  --green:#123B2A; --green2:#1F7A4D; --gold:#C29B3C; --gold2:#E7CE8F;
+  --red:#B3402A; --line:#E4DFD2; --chip:#EEF3EE;
+  --r:14px; --sh:0 1px 3px rgba(20,40,30,.08);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--paper);color:var(--ink);font-size:15px;padding-bottom:78px}
+.num{font-variant-numeric:tabular-nums;letter-spacing:.2px}
+header.app{position:sticky;top:0;z-index:30;background:var(--green);color:#F4EDDA;padding:12px 14px calc(10px + env(safe-area-inset-top,0px));padding-top:calc(12px + env(safe-area-inset-top,0px));display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+header.app .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#C29B3C,#8A6A1E);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;color:#123B2A;font-family:Georgia,serif}
+header.app h1{font-size:15.5px;font-weight:700;letter-spacing:.6px;flex:1;font-family:Georgia,'Times New Roman',serif}
+header.app .ver{font-size:10px;opacity:.75;display:block;letter-spacing:2px;font-family:-apple-system,sans-serif;font-weight:500}
+.hbtn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:#F4EDDA;border-radius:10px;padding:7px 11px;font-size:14px}
+main{padding:12px;max-width:760px;margin:0 auto}
+h2.sec{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--mut);margin:16px 2px 8px;font-weight:700}
+/* passbook strip */
+.strip{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
+.strip::-webkit-scrollbar{display:none}
+.pass{min-width:150px;flex:0 0 auto;border-radius:16px;padding:12px 14px;color:#fff;position:relative;overflow:hidden;box-shadow:var(--sh)}
+.pass::after{content:"";position:absolute;top:0;right:0;width:8px;height:100%;background:linear-gradient(180deg,var(--gold2),var(--gold))}
+.pass.cash{background:linear-gradient(135deg,#1F7A4D,#123B2A)}
+.pass.bank{background:linear-gradient(135deg,#28527A,#152C44)}
+.pass.cardp{background:linear-gradient(135deg,#7A2E2E,#3F1414)}
+.pass .t{font-size:11px;opacity:.85;letter-spacing:.8px;text-transform:uppercase}
+.pass .v{font-size:20px;font-weight:800;margin-top:4px}
+.pass .s{font-size:11px;opacity:.8;margin-top:3px}
+/* cards & rows */
+.box{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);padding:12px;margin-bottom:10px}
+.row{display:flex;align-items:center;gap:8px}
+.row.between{justify-content:space-between}
+.grow{flex:1;min-width:0}
+.item{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line)}
+.item:last-child{border-bottom:none}
+.item .em{width:36px;height:36px;border-radius:10px;background:var(--chip);display:flex;align-items:center;justify-content:center;font-size:17px;flex:0 0 auto}
+.item .nm{font-weight:600;font-size:14.5px}
+.item .sub{font-size:12px;color:var(--mut);margin-top:1px}
+.amt{font-weight:800;font-size:15px}
+.amt.in{color:var(--green2)} .amt.out{color:var(--red)}
+.pill{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--mut);font-weight:600}
+/* forms */
+input,select,textarea{font:inherit;color:var(--ink);background:#FCFBF6;border:1px solid var(--line);border-radius:11px;padding:11px 12px;width:100%;min-width:0}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--gold);border-color:var(--gold)}
+label.f{display:block;font-size:11.5px;color:var(--mut);font-weight:700;margin:10px 0 4px;letter-spacing:.4px}
+.bigamt{font-size:26px;font-weight:800;text-align:center;padding:14px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.chip{padding:9px 13px;border-radius:999px;border:1.5px solid var(--line);background:#fff;font-size:14px;font-weight:600;color:var(--ink)}
+.chip.on{background:var(--green);border-color:var(--green);color:#fff}
+.chip.gold.on{background:var(--gold);border-color:var(--gold);color:#26200f}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:none;border-radius:12px;padding:13px 16px;font-size:15px;font-weight:700;background:var(--green);color:#fff;width:100%}
+.btn.sm{width:auto;padding:9px 13px;font-size:13.5px}
+.btn.ghost{background:#fff;color:var(--green);border:1.5px solid var(--green)}
+.btn.red{background:var(--red)} .btn.gold{background:var(--gold);color:#26200f}
+.btn:active{transform:scale(.985)}
+.two{display:flex;gap:8px}.two>*{flex:1}
+/* mic */
+.mic{width:46px;height:46px;border-radius:50%;border:1.5px solid var(--line);background:#fff;font-size:19px;flex:0 0 auto}
+.mic.rec{background:var(--red);border-color:var(--red);color:#fff;animation:pl 1s infinite}
+@keyframes pl{50%{box-shadow:0 0 0 8px rgba(179,64,42,.15)}}
+/* budget bar */
+.bar{height:10px;border-radius:999px;background:var(--chip);overflow:hidden}
+.bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--green2),var(--gold));border-radius:999px}
+.bar>i.over{background:var(--red)}
+/* bottom nav */
+nav.bot{position:fixed;left:0;right:0;bottom:0;z-index:40;background:#fff;border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom,0px)}
+nav.bot button{flex:1;background:none;border:none;padding:9px 2px 7px;font-size:10.5px;color:var(--mut);font-weight:700;display:flex;flex-direction:column;align-items:center;gap:2px}
+nav.bot button .i{font-size:20px}
+nav.bot button.on{color:var(--green)}
+nav.bot button.on .i{transform:translateY(-1px)}
+/* sheet */
+.sheet{position:fixed;inset:0;z-index:60;background:rgba(15,25,20,.45);display:none;align-items:flex-end;justify-content:center}
+.sheet.on{display:flex}
+.sheet .in{background:var(--paper);width:100%;max-width:760px;max-height:92vh;overflow-y:auto;border-radius:18px 18px 0 0;padding:14px 14px calc(20px + env(safe-area-inset-bottom,0px))}
+.sheet h3{font-family:Georgia,serif;font-size:18px;margin-bottom:10px}
+.xrow{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.x{background:var(--chip);border:none;border-radius:50%;width:32px;height:32px;font-size:15px}
+canvas{width:100%;background:#fff;border:1px solid var(--line);border-radius:var(--r)}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.5px;padding:2px 7px;border-radius:6px}
+.tag.get{background:#E4F3EA;color:var(--green2)} .tag.give{background:#F8E7E2;color:var(--red)}
+.empty{text-align:center;color:var(--mut);padding:26px 10px;font-size:13.5px}
+.mini{font-size:12px;color:var(--mut)}
+.right{text-align:right}
+.hide{display:none!important}
+audio{display:none}
+.tabs{display:flex;gap:6px;margin-bottom:10px}
+.tabs button{flex:1;border:1.5px solid var(--line);background:#fff;border-radius:10px;padding:9px;font-weight:700;font-size:13.5px;color:var(--mut)}
+.tabs button.on{background:var(--green);border-color:var(--green);color:#fff}
+.insight{border-left:4px solid var(--gold);background:#fff;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:13.5px;box-shadow:var(--sh)}
+</style>
+</head>
+<body>
+<header class="app">
+  <div class="logo">₹</div>
+  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v4</span></h1>
+  <button class="hbtn" onclick="openSettings()">⚙️</button>
+</header>
+<main id="main"></main>
+<nav class="bot">
+  <button id="nb_home" onclick="go('home')"><span class="i">🏠</span>Home</button>
+  <button id="nb_exp" onclick="go('exp')"><span class="i">🧾</span>Expenses</button>
+  <button id="nb_led" onclick="go('led')"><span class="i">🤝</span>Ledger</button>
+  <button id="nb_card" onclick="go('card')"><span class="i">💳</span>Cards</button>
+  <button id="nb_rep" onclick="go('rep')"><span class="i">📊</span>Reports</button>
+</nav>
+<div class="sheet" id="sheet"><div class="in" id="sheetIn"></div></div>
+<div id="players"></div>
+
+
+<script>
+/* ================= DATA ================= */
+const LS='pb_khata_v1';
+let DB=JSON.parse(localStorage.getItem(LS)||'null')||{
+  cashOpen:0, banks:[], cards:[], budget:0,
+  cats:[
+    {id:'c1',nm:'Khana-Peena',em:'🍽️',bud:0},{id:'c2',nm:'Ghar',em:'🏠',bud:0},
+    {id:'c3',nm:'Fuel/Travel',em:'⛽',bud:0},{id:'c4',nm:'Shopping',em:'🛍️',bud:0},
+    {id:'c5',nm:'Health',em:'💊',bud:0},{id:'c6',nm:'Mobile/Net',em:'📱',bud:0},
+    {id:'c7',nm:'Family',em:'👨‍👩‍👦',bud:0},{id:'c8',nm:'Entertainment',em:'🎬',bud:0},
+    {id:'c9',nm:'Business',em:'🏪',bud:0},{id:'c10',nm:'Other',em:'📦',bud:0}],
+  exps:[],   // {id,date,amt,cat,mode,note,aud}  mode:'cash'|bankId|cardId
+  led:[],    // {id,date,typ:'in'|'out',party,amt,mode,note}  mode:'cash'|bankId
+  pays:[]    // card payments {id,date,cardId,from,amt}  from:'cash'|bankId
+};
+function S(){localStorage.setItem(LS,JSON.stringify(DB))}
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const fmt=n=>'₹'+(Math.round(n)||0).toLocaleString('en-IN');
+const today=()=>new Date().toISOString().slice(0,10);
+const mkey=d=>(d||today()).slice(0,7);
+const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const mlabel=k=>MN[+k.slice(5,7)-1]+' '+k.slice(0,4);
+const dfmt=d=>{const x=new Date(d+'T00:00');return x.getDate()+' '+MN[x.getMonth()]};
+const esc=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(m){let t=document.getElementById('tst');if(!t){t=document.createElement('div');t.id='tst';t.style.cssText='position:fixed;bottom:86px;left:50%;transform:translateX(-50%);background:#1C2B24;color:#fff;padding:10px 16px;border-radius:999px;font-size:13.5px;z-index:99;box-shadow:0 4px 14px rgba(0,0,0,.3);max-width:88%';document.body.appendChild(t)}t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',2200)}
+
+/* ---- IndexedDB for voice notes ---- */
+let idb;const idbReady=new Promise(res=>{const r=indexedDB.open('pb_khata_media',1);
+r.onupgradeneeded=e=>e.target.result.createObjectStore('aud');
+r.onsuccess=e=>{idb=e.target.result;res()};r.onerror=()=>res()});
+function audPut(id,blob){return idbReady.then(()=>new Promise(r=>{if(!idb)return r();const t=idb.transaction('aud','readwrite');t.objectStore('aud').put(blob,id);t.oncomplete=r}))}
+function audGet(id){return idbReady.then(()=>new Promise(r=>{if(!idb)return r(null);const q=idb.transaction('aud').objectStore('aud').get(id);q.onsuccess=()=>r(q.result||null);q.onerror=()=>r(null)}))}
+function audDel(id){return idbReady.then(()=>new Promise(r=>{if(!idb)return r();const t=idb.transaction('aud','readwrite');t.objectStore('aud').delete(id);t.oncomplete=r}))}
+
+/* ================= BALANCES ================= */
+function bankById(id){return DB.banks.find(b=>b.id===id)}
+function cardById(id){return DB.cards.find(c=>c.id===id)}
+function modeName(m){if(m==='cash')return'Cash';if(m==='open')return'📖 Opening balance';const b=bankById(m);if(b)return b.nm;const c=cardById(m);if(c)return c.nm+' 💳';return m}
+function accBal(id){ // 'cash' or bankId
+  let v=id==='cash'?(+DB.cashOpen||0):(+((bankById(id)||{}).open)||0);
+  DB.led.forEach(l=>{if(l.mode===id)v+=l.typ==='in'?+l.amt:-l.amt});
+  DB.exps.forEach(e=>{if(e.mode===id)v-=+e.amt});
+  DB.pays.forEach(p=>{if(p.from===id)v-=+p.amt});
+  return v}
+function cardOut(id){const c=cardById(id);if(!c)return 0;let v=+c.open||0;
+  DB.exps.forEach(e=>{if(e.mode===id)v+=+e.amt});
+  DB.pays.forEach(p=>{if(p.cardId===id)v-=+p.amt});
+  // EMI principal already inside outstanding; EMIs listed for bill only
+  return v}
+function emiActive(c,mk){ // EMIs of card c active in month mk
+  return (c.emis||[]).filter(e=>{if(!e.start)return true;const s=e.start,tot=+e.tot||1;
+    const idx=(+mk.slice(0,4)-+s.slice(0,4))*12+(+mk.slice(5,7)-+s.slice(5,7));
+    return idx>=0&&idx<tot})}
+function monthSpend(mk){return DB.exps.filter(e=>mkey(e.date)===mk).reduce((s,e)=>s+ +e.amt,0)}
+
+/* ================= NAV ================= */
+let CUR='home';
+function go(t){CUR=t;document.querySelectorAll('nav.bot button').forEach(b=>b.classList.remove('on'));
+  const nb=document.getElementById('nb_'+t);if(nb)nb.classList.add('on');
+  ({home:renderHome,exp:renderExp,led:renderLed,card:renderCards,rep:renderRep})[t]();
+  window.scrollTo(0,0)}
+const M=()=>document.getElementById('main');
+
+/* ================= HOME ================= */
+function renderHome(){
+  const mk=mkey(),sp=monthSpend(mk),bud=+DB.budget||0;
+  const cardTot=DB.cards.reduce((s,c)=>s+cardOut(c.id),0);
+  let strip=`<div class="pass cash"><div class="t">Cash</div><div class="v num">${fmt(accBal('cash'))}</div><div class="s">cash in hand</div></div>`;
+  DB.banks.forEach(b=>strip+=`<div class="pass bank"><div class="t">🏦 ${esc(b.nm)}</div><div class="v num">${fmt(accBal(b.id))}</div><div class="s">bank balance</div></div>`);
+  DB.cards.forEach(c=>strip+=`<div class="pass cardp"><div class="t">💳 ${esc(c.nm)}</div><div class="v num">${fmt(cardOut(c.id))}</div><div class="s">outstanding (payable)</div></div>`);
+  const pct=bud?Math.min(100,sp/bud*100):0;
+  M().innerHTML=`
+  <div class="strip">${strip}</div>
+  <div class="box">
+    <div class="row between"><b>Spend — ${mlabel(mk)}</b><span class="amt out num">${fmt(sp)}</span></div>
+    ${bud?`<div style="margin-top:8px" class="bar"><i class="${sp>bud?'over':''}" style="width:${pct}%"></i></div>
+    <div class="row between mini" style="margin-top:5px"><span>Budget ${fmt(bud)}</span><span>${sp>bud?'⚠️ '+fmt(sp-bud)+' over budget':fmt(bud-sp)+' remaining'}</span></div>`
+    :`<div class="mini" style="margin-top:6px">No budget set yet — set it in ⚙️ Settings</div>`}
+  </div>
+  <div class="two" style="margin-bottom:8px">
+    <button class="btn" onclick="go('exp')">🧾 Add expense</button>
+    <button class="btn ghost" onclick="go('led')">🤝 Debtors / Creditors</button>
+  </div>
+  <div class="two" style="margin-bottom:10px">
+    <button class="btn ghost" onclick="go('card')">💳 Credit cards &amp; EMI</button>
+    <button class="btn ghost" onclick="go('rep')">📊 Reports &amp; charts</button>
+  </div>
+  ${cardTot?`<div class="box row between"><span>💳 Total card outstanding</span><b class="amt out num">${fmt(cardTot)}</b></div>`:''}
+  <h2 class="sec">Recent entries</h2>
+  <div class="box">${lastEntriesHTML(8)}</div>`;
+}
+function lastEntriesHTML(n){
+  const all=[...DB.exps.map(e=>({...e,_k:'e'})),...DB.led.map(l=>({...l,_k:'l'})),...DB.pays.map(p=>({...p,_k:'p'}))]
+   .sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id)).slice(0,n);
+  if(!all.length)return`<div class="empty">No entries yet.<br>First set your opening balances in ⚙️ Settings, then start adding expenses.</div>`;
+  return all.map(x=>{
+    if(x._k==='e'){const c=DB.cats.find(k=>k.id===x.cat)||{em:'📦',nm:'Other'};
+      return rowHTML(c.em,esc(c.nm)+(x.note?' · '+esc(x.note):''),dfmt(x.date)+' · '+modeName(x.mode),'-'+fmt(x.amt),'out',x.aud?x.id:null)}
+    if(x._k==='l')return rowHTML(x.typ==='in'?'⬇️':'⬆️',esc(x.party||'—'),dfmt(x.date)+' · '+modeName(x.mode)+(x.note?' · '+esc(x.note):''),(x.typ==='in'?'+':'-')+fmt(x.amt),x.typ==='in'?'in':'out')
+    return rowHTML('💳','Card payment · '+esc((cardById(x.cardId)||{}).nm||''),dfmt(x.date)+' · from '+modeName(x.from),'-'+fmt(x.amt),'out')
+  }).join('')}
+function rowHTML(em,nm,sub,amt,cls,audId){
+  return`<div class="item"><div class="em">${em}</div><div class="grow"><div class="nm">${nm}</div><div class="sub">${sub}</div></div>
+  ${audId?`<button class="mic" style="width:34px;height:34px;font-size:14px" onclick="playAud('${audId}')">▶️</button>`:''}
+  <div class="amt ${cls} num">${amt}</div></div>`}
+async function playAud(id){const b=await audGet(id);if(!b)return toast('Recording not found');
+  const u=URL.createObjectURL(b);const a=new Audio(u);a.onended=()=>URL.revokeObjectURL(u);a.play()}
+
+/* ================= EXPENSE (entry line on TOP, list below) ================= */
+let F={cat:null,mode:'cash',aud:null};
+function renderExp(){
+  const mk=mkey();
+  M().innerHTML=`
+  <div class="box" id="expForm">
+    <input class="bigamt num" id="e_amt" type="number" inputmode="decimal" placeholder="₹ Amount spent">
+    <label class="f">CATEGORY</label>
+    <div class="chips" id="e_cats">${DB.cats.map(c=>`<button class="chip ${F.cat===c.id?'on':''}" onclick="F.cat='${c.id}';renderExpChips()">${c.em} ${esc(c.nm)}</button>`).join('')}</div>
+    <label class="f">PAID FROM</label>
+    <div class="chips" id="e_modes">${modeChips()}</div>
+    <div class="row" style="margin-top:12px;gap:8px">
+      <input id="e_note" placeholder="Note (optional) — what was it for?" class="grow">
+      <button class="mic" id="e_mic" onclick="toggleRec()">🎙️</button>
+    </div>
+    <div class="mini hide" id="e_recmsg" style="margin-top:6px">🔴 Recording... tap the mic again to stop</div>
+    <div class="mini hide" id="e_hasaud" style="margin-top:6px">✅ Voice note attached <button class="btn sm red" style="padding:3px 9px;font-size:11px" onclick="dropRec()">✕ Remove</button></div>
+    <div class="row" style="margin-top:12px;gap:8px">
+      <input id="e_date" type="date" value="${today()}" style="max-width:150px">
+      <button class="btn grow" onclick="saveExp()">💾 Save expense</button>
+    </div>
+    <button class="btn sm ghost" style="margin-top:10px;width:100%" onclick="importSheet()">📥 Import statement (paste code from Claude)</button>
+  </div>
+  <h2 class="sec">${mlabel(mk)} — ${fmt(monthSpend(mk))}</h2>
+  <div class="box" id="expList">${expListHTML(mk)}</div>`;
+}
+function modeChips(){let h=`<button class="chip ${F.mode==='cash'?'on':''}" onclick="F.mode='cash';renderExpChips()">💵 Cash</button>`;
+  DB.banks.forEach(b=>h+=`<button class="chip ${F.mode===b.id?'on':''}" onclick="F.mode='${b.id}';renderExpChips()">🏦 ${esc(b.nm)}</button>`);
+  DB.cards.forEach(c=>h+=`<button class="chip gold ${F.mode===c.id?'on':''}" onclick="F.mode='${c.id}';renderExpChips()">💳 ${esc(c.nm)}</button>`);
+  return h}
+function renderExpChips(){document.getElementById('e_cats').innerHTML=DB.cats.map(c=>`<button class="chip ${F.cat===c.id?'on':''}" onclick="F.cat='${c.id}';renderExpChips()">${c.em} ${esc(c.nm)}</button>`).join('');
+  document.getElementById('e_modes').innerHTML=modeChips()}
+function expListHTML(mk){
+  const L=DB.exps.filter(e=>mkey(e.date)===mk).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+  if(!L.length)return`<div class="empty">No expenses recorded this month.</div>`;
+  return L.map(e=>{const c=DB.cats.find(k=>k.id===e.cat)||{em:'📦',nm:'Other'};
+   return`<div class="item"><div class="em">${c.em}</div><div class="grow"><div class="nm">${esc(c.nm)}${e.note?' · <span style="font-weight:500">'+esc(e.note)+'</span>':''}</div>
+   <div class="sub">${dfmt(e.date)} · ${modeName(e.mode)}</div></div>
+   ${e.aud?`<button class="mic" style="width:34px;height:34px;font-size:14px" onclick="playAud('${e.id}')">▶️</button>`:''}
+   <div class="amt out num">-${fmt(e.amt)}</div>
+   <button class="x" onclick="delExp('${e.id}')">🗑️</button></div>`}).join('')}
+function saveExp(){
+  const amt=+document.getElementById('e_amt').value;
+  if(!amt||amt<=0)return toast('Enter the amount');
+  if(!F.cat)return toast('Select a category');
+  const id=uid();
+  DB.exps.push({id,date:document.getElementById('e_date').value||today(),amt,cat:F.cat,mode:F.mode,note:document.getElementById('e_note').value.trim(),aud:!!F.aud});
+  if(F.aud)audPut(id,F.aud);
+  S();F={cat:null,mode:F.mode,aud:null};
+  toast('✅ Expense saved — '+fmt(amt));renderExp()}
+function delExp(id){if(!confirm('Delete this expense?'))return;
+  DB.exps=DB.exps.filter(e=>e.id!==id);audDel(id);S();renderExp()}
+
+/* ---- statement import ---- */
+function importSheet(){
+  openSheet(`<div class="xrow"><h3>📥 Statement import</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <div class="mini" style="margin-bottom:8px">Send your card/bank statement (photo, PDF or copied text) <b>to Claude</b> — it will explain every line and give you an import code. Paste that code here. Simple lines also work:<br><span style="font-family:monospace">2026-07-20 | 450 | Khana | HDFC Card | Swiggy dinner</span></div>
+  <textarea id="im_txt" rows="8" placeholder='Paste here — Claude import code or one line per entry'></textarea>
+  <button class="btn" style="margin-top:10px" onclick="parseImport(false)">👀 Preview first</button>
+  <div id="im_prev" style="margin-top:10px"></div>`)}
+function matchCat(s){s=(s||'').toLowerCase();
+  let c=DB.cats.find(k=>k.nm.toLowerCase()===s)||DB.cats.find(k=>k.nm.toLowerCase().includes(s)||s.includes(k.nm.toLowerCase()));
+  return c?c.id:(DB.cats.find(k=>/other/i.test(k.nm))||DB.cats[DB.cats.length-1]).id}
+function matchMode(s){s=(s||'').toLowerCase();if(!s||/cash/.test(s))return'cash';
+  let b=DB.banks.find(x=>s.includes(x.nm.toLowerCase())||x.nm.toLowerCase().includes(s));if(b)return b.id;
+  let c=DB.cards.find(x=>s.includes(x.nm.toLowerCase())||x.nm.toLowerCase().includes(s));if(c)return c.id;
+  if(/card/.test(s)&&DB.cards[0])return DB.cards[0].id;
+  if(/bank|upi|gpay|neft|imps/.test(s)&&DB.banks[0])return DB.banks[0].id;
+  return'cash'}
+function parseImport(save){
+  const t=document.getElementById('im_txt').value.trim();if(!t)return toast('Paste something first');
+  let rows=[];
+  try{const j=JSON.parse(t);if(Array.isArray(j))rows=j.map(r=>({d:r.d||r.date,a:+(r.a||r.amt||r.amount),c:r.c||r.cat||'',m:r.m||r.mode||'',n:r.n||r.note||''}))}catch(_){
+    rows=t.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{const p=l.split(/\s*[|,;]\s*/);
+      return{d:p[0],a:+p[1],c:p[2]||'',m:p[3]||'',n:p[4]||''}})}
+  rows=rows.filter(r=>r.d&&/^\d{4}-\d{2}-\d{2}/.test(r.d)&&r.a>0);
+  if(!rows.length)return document.getElementById('im_prev').innerHTML='<div class="empty">No valid lines found. Format: date | amount | category | paid-from | note</div>';
+  let dup=0;const fresh=rows.filter(r=>{const ex=DB.exps.some(e=>e.date===r.d.slice(0,10)&&+e.amt===r.a&&(e.note||'')===(r.n||''));if(ex)dup++;return!ex});
+  if(!save){
+    document.getElementById('im_prev').innerHTML=
+    `<div class="box">${rows.slice(0,50).map(r=>{const cid=matchCat(r.c),c=DB.cats.find(x=>x.id===cid);
+      return`<div class="mini" style="padding:3px 0">• ${dfmt(r.d.slice(0,10))} — <b>${fmt(r.a)}</b> — ${c.em} ${esc(c.nm)} — ${esc(modeName(matchMode(r.m)))}${r.n?' — '+esc(r.n):''}</div>`}).join('')}</div>
+    <div class="mini" style="margin:6px 0">${rows.length} entries found${dup?' · '+dup+' duplicates will be skipped':''}</div>
+    <button class="btn gold" onclick="parseImport(true)">✅ Save ${fresh.length} entries</button>`;
+    return}
+  fresh.forEach(r=>DB.exps.push({id:uid(),date:r.d.slice(0,10),amt:r.a,cat:matchCat(r.c),mode:matchMode(r.m),note:(r.n||'').trim(),aud:false}));
+  S();closeSheet();toast('✅ '+fresh.length+' entries imported'+(dup?' ('+dup+' duplicates skipped)':''));renderExp()}
+
+/* ---- voice recording ---- */
+let mediaRec=null,recChunks=[];
+async function toggleRec(){
+  const mic=document.getElementById('e_mic');
+  if(mediaRec&&mediaRec.state==='recording'){mediaRec.stop();return}
+  try{
+    const st=await navigator.mediaDevices.getUserMedia({audio:true});
+    recChunks=[];mediaRec=new MediaRecorder(st);
+    mediaRec.ondataavailable=e=>recChunks.push(e.data);
+    mediaRec.onstop=()=>{st.getTracks().forEach(t=>t.stop());
+      F.aud=new Blob(recChunks,{type:mediaRec.mimeType||'audio/webm'});
+      mic.classList.remove('rec');document.getElementById('e_recmsg').classList.add('hide');
+      document.getElementById('e_hasaud').classList.remove('hide')};
+    mediaRec.start();mic.classList.add('rec');
+    document.getElementById('e_recmsg').classList.remove('hide');
+    document.getElementById('e_hasaud').classList.add('hide');
+  }catch(err){toast('Microphone permission denied')}}
+function dropRec(){F.aud=null;document.getElementById('e_hasaud').classList.add('hide')}
+
+/* ================= LEN-DEN (cash in/out + party ledger) ================= */
+let L={typ:'in',mode:'cash'};
+function renderLed(){
+  M().innerHTML=`
+  <div class="box">
+    <div class="tabs">
+      <button class="${L.typ==='in'?'on':''}" onclick="L.typ='in';renderLed()">⬇️ Money IN (received)</button>
+      <button class="${L.typ==='out'?'on':''}" onclick="L.typ='out';renderLed()">⬆️ Money OUT (given)</button>
+    </div>
+    <input class="bigamt num" id="l_amt" type="number" inputmode="decimal" placeholder="₹ Amount">
+    <label class="f">PARTY (from whom / to whom)</label>
+    <input id="l_party" list="l_parties" placeholder="Type a name or pick from the list">
+    <datalist id="l_parties">${[...new Set(DB.led.map(x=>x.party).filter(Boolean))].map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
+    <label class="f">${L.typ==='in'?'RECEIVED INTO':'PAID FROM'}</label>
+    <div class="chips">
+      <button class="chip ${L.mode==='cash'?'on':''}" onclick="L.mode='cash';renderLed()">💵 Cash</button>
+      ${DB.banks.map(b=>`<button class="chip ${L.mode===b.id?'on':''}" onclick="L.mode='${b.id}';renderLed()">🏦 ${esc(b.nm)}</button>`).join('')}
+      <button class="chip gold ${L.mode==='open'?'on':''}" onclick="L.mode='open';renderLed()">📖 Opening balance</button>
+    </div>
+    ${L.mode==='open'?`<div class="mini" style="margin-top:6px">📖 <b>Opening balance entry</b> — goes only into the party ledger. Cash/Bank balances will NOT change (that money moved before you started tracking). "OUT" = you had given (they owe you) · "IN" = you had taken (you owe them).</div>`:''}
+    <label class="f">NOTE (optional)</label>
+    <input id="l_note" placeholder="Reason — loan / repayment / gift...">
+    <div class="row" style="margin-top:12px;gap:8px">
+      <input id="l_date" type="date" value="${today()}" style="max-width:150px">
+      <button class="btn grow ${L.typ==='out'?'red':''}" onclick="saveLed()">💾 Save ${L.typ==='in'?'IN':'OUT'}</button>
+    </div>
+    <div class="mini" style="margin-top:8px">⚠️ This is NOT an expense — only money in/out of cash or bank. Balances update directly.</div>
+  </div>
+  <h2 class="sec">Debtors &amp; Creditors (party balances)</h2>
+  <div class="box">${partyHTML()}</div>
+  <h2 class="sec">All entries</h2>
+  <div class="box">${ledListHTML()}</div>`;
+}
+function partyBalances(){const m={};DB.led.forEach(l=>{if(!l.party)return;
+  m[l.party]=(m[l.party]||0)+(l.typ==='out'?+l.amt:-l.amt)});return m}
+function partyHTML(){const m=partyBalances();const ks=Object.keys(m).filter(p=>Math.round(m[p])!==0);
+  if(!ks.length)return`<div class="empty">No open balances. Add a party name on IN/OUT entries (or an 📖 Opening balance) and the running balance will build here.</div>`;
+  return ks.sort((a,b)=>Math.abs(m[b])-Math.abs(m[a])).map(p=>{const v=m[p];
+   return`<div class="item" onclick="partyView('${esc(p).replace(/'/g,"\\'")}')" style="cursor:pointer"><div class="em">${v>0?'🟢':'🔴'}</div>
+   <div class="grow"><div class="nm">${esc(p)}</div><div class="sub">${v>0?'To receive — Debtor':'To pay — Creditor'}</div></div>
+   <span class="tag ${v>0?'get':'give'}">${fmt(Math.abs(v))}</span></div>`}).join('')}
+function partyView(p){const rows=DB.led.filter(l=>l.party===p).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+  const bal=partyBalances()[p]||0;
+  openSheet(`<div class="xrow"><h3>🤝 ${esc(p)}</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <div class="box row between"><span>Net balance</span><span class="tag ${bal>0?'get':'give'}">${bal>0?'To receive ':'To pay '}${fmt(Math.abs(bal))}</span></div>
+  <div class="box">${rows.map(l=>rowHTML(l.typ==='in'?'⬇️':'⬆️',(l.typ==='in'?'Received':'Given')+(l.note?' · '+esc(l.note):''),dfmt(l.date)+' · '+modeName(l.mode),(l.typ==='in'?'+':'-')+fmt(l.amt),l.typ==='in'?'in':'out')).join('')}</div>`)}
+function ledListHTML(){const L2=[...DB.led].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id)).slice(0,40);
+  if(!L2.length)return`<div class="empty">No ledger entries yet.</div>`;
+  return L2.map(l=>`<div class="item"><div class="em">${l.typ==='in'?'⬇️':'⬆️'}</div>
+  <div class="grow"><div class="nm">${esc(l.party||'—')}${l.note?' · <span style="font-weight:500">'+esc(l.note)+'</span>':''}</div>
+  <div class="sub">${dfmt(l.date)} · ${modeName(l.mode)}</div></div>
+  <div class="amt ${l.typ==='in'?'in':'out'} num">${l.typ==='in'?'+':'-'}${fmt(l.amt)}</div>
+  <button class="x" onclick="delLed('${l.id}')">🗑️</button></div>`).join('')}
+function saveLed(){const amt=+document.getElementById('l_amt').value;
+  if(!amt||amt<=0)return toast('Enter the amount');
+  DB.led.push({id:uid(),date:document.getElementById('l_date').value||today(),typ:L.typ,
+    party:document.getElementById('l_party').value.trim(),amt,mode:L.mode,note:document.getElementById('l_note').value.trim()});
+  S();toast('✅ '+(L.typ==='in'?'IN':'OUT')+' saved — '+fmt(amt));renderLed()}
+function delLed(id){if(!confirm('Delete this entry?'))return;DB.led=DB.led.filter(l=>l.id!==id);S();renderLed()}
+
+/* ================= CARDS ================= */
+function renderCards(){
+  M().innerHTML=`
+  <button class="btn ghost" style="margin-bottom:10px" onclick="cardForm()">➕ Add credit card</button>
+  ${DB.cards.length?DB.cards.map(c=>cardBoxHTML(c)).join(''):`<div class="box empty">No cards added yet.<br>Add a card to manage its outstanding, EMIs and bill payments here.</div>`}`;
+}
+function cardBoxHTML(c){const out=cardOut(c.id),mk=mkey();
+  const emis=emiActive(c,mk),emiTot=emis.reduce((s,e)=>s+ +e.mo,0);
+  const spends=DB.exps.filter(e=>e.mode===c.id&&mkey(e.date)===mk).reduce((s,e)=>s+ +e.amt,0);
+  return`<div class="box">
+    <div class="row between"><b>💳 ${esc(c.nm)}</b>
+      <div class="row" style="gap:6px"><button class="btn sm ghost" onclick="cardForm('${c.id}')">✏️</button>
+      <button class="btn sm ghost" onclick="billCheck('${c.id}')">🧮 Bill check</button></div></div>
+    <div class="row between" style="margin-top:8px"><span class="mini">Current outstanding</span><b class="amt out num" style="font-size:18px">${fmt(out)}</b></div>
+    <div class="row between" style="margin-top:4px"><span class="mini">Spent on this card this month</span><span class="num">${fmt(spends)}</span></div>
+    ${emis.length?`<div class="row between" style="margin-top:4px"><span class="mini">Active EMIs (${emis.length})</span><span class="num">${fmt(emiTot)}/month</span></div>
+      ${emis.map(e=>`<div class="mini" style="margin-left:8px">• ${esc(e.nm)} — ${fmt(e.mo)} × ${emiLeft(e,mk)} months left</div>`).join('')}`:''}
+    ${c.billDay?`<div class="mini" style="margin-top:6px">📅 Bill date: ${c.billDay} of every month${c.dueDay?' · Due date: '+c.dueDay:''}</div>`:''}
+    <button class="btn gold" style="margin-top:10px" onclick="payForm('${c.id}')">💰 Record bill payment</button>
+  </div>`}
+function emiLeft(e,mk){if(!e.start)return e.tot||'?';
+  const idx=(+mk.slice(0,4)-+e.start.slice(0,4))*12+(+mk.slice(5,7)-+e.start.slice(5,7));
+  return Math.max(0,(+e.tot||0)-idx)}
+function cardForm(id){const c=id?cardById(id):{nm:'',open:0,billDay:'',dueDay:'',emis:[]};
+  openSheet(`<div class="xrow"><h3>${id?'✏️ Edit card':'➕ New card'}</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <label class="f">CARD NAME</label><input id="c_nm" value="${esc(c.nm)}" placeholder="HDFC Regalia / SBI...">
+  <label class="f">CURRENT OUTSTANDING (as per latest statement)</label><input id="c_open" type="number" inputmode="decimal" value="${c.open||''}" placeholder="₹ from your statement">
+  <div class="two"><div><label class="f">BILL DATE (1-31)</label><input id="c_bd" type="number" value="${c.billDay||''}" placeholder="15"></div>
+  <div><label class="f">DUE DATE (1-31)</label><input id="c_dd" type="number" value="${c.dueDay||''}" placeholder="3"></div></div>
+  <label class="f">ACTIVE EMIs (name · ₹/month · total months · start month)</label>
+  <div id="c_emis">${(c.emis||[]).map((e,i)=>emiRow(e,i)).join('')}</div>
+  <button class="btn sm ghost" style="margin-top:6px" onclick="addEmiRow()">➕ Add EMI</button>
+  <button class="btn" style="margin-top:14px" onclick="saveCard('${id||''}')">💾 Save</button>
+  ${id?`<button class="btn red" style="margin-top:8px" onclick="delCard('${id}')">🗑️ Delete card</button>`:''}`)}
+function emiRow(e,i){return`<div class="row" style="gap:6px;margin-top:6px" data-emi>
+  <input placeholder="Phone EMI" value="${esc(e.nm||'')}" data-enm style="flex:2">
+  <input type="number" placeholder="₹/mo" value="${e.mo||''}" data-emo style="flex:1">
+  <input type="number" placeholder="months" value="${e.tot||''}" data-etot style="flex:1">
+  <input type="month" value="${e.start||''}" data-est style="flex:1.4">
+  <button class="x" onclick="this.parentElement.remove()">✕</button></div>`}
+function addEmiRow(){document.getElementById('c_emis').insertAdjacentHTML('beforeend',emiRow({},0))}
+function saveCard(id){const nm=document.getElementById('c_nm').value.trim();
+  if(!nm)return toast('Enter the card name');
+  const emis=[...document.querySelectorAll('#c_emis [data-emi]')].map(r=>({
+    nm:r.querySelector('[data-enm]').value.trim(),mo:+r.querySelector('[data-emo]').value||0,
+    tot:+r.querySelector('[data-etot]').value||0,start:r.querySelector('[data-est]').value}))
+    .filter(e=>e.nm&&e.mo);
+  const obj={nm,open:+document.getElementById('c_open').value||0,
+    billDay:+document.getElementById('c_bd').value||'',dueDay:+document.getElementById('c_dd').value||'',emis};
+  if(id){Object.assign(cardById(id),obj)}else{obj.id=uid();DB.cards.push(obj)}
+  S();closeSheet();toast('✅ Card saved');go('card')}
+function delCard(id){if(!confirm('Delete this card? Its expenses will remain in history.'))return;
+  DB.cards=DB.cards.filter(c=>c.id!==id);S();closeSheet();go('card')}
+function payForm(id){const c=cardById(id);
+  openSheet(`<div class="xrow"><h3>💰 ${esc(c.nm)} — bill payment</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <input class="bigamt num" id="p_amt" type="number" inputmode="decimal" placeholder="₹ Amount paid">
+  <label class="f">PAID FROM</label>
+  <div class="chips" id="p_modes">${payModeChips('cash')}</div>
+  <label class="f">DATE</label><input id="p_date" type="date" value="${today()}">
+  <button class="btn" style="margin-top:14px" onclick="savePay('${id}')">💾 Save payment</button>
+  <div class="mini" style="margin-top:8px">Card outstanding will reduce, and so will the account you paid from.</div>`)}
+let PMODE='cash';
+function payModeChips(sel){PMODE=sel;
+  let h=`<button class="chip ${sel==='cash'?'on':''}" onclick="document.getElementById('p_modes').innerHTML=payModeChips('cash')">💵 Cash</button>`;
+  DB.banks.forEach(b=>h+=`<button class="chip ${sel===b.id?'on':''}" onclick="document.getElementById('p_modes').innerHTML=payModeChips('${b.id}')">🏦 ${esc(b.nm)}</button>`);
+  return h}
+function savePay(id){const amt=+document.getElementById('p_amt').value;
+  if(!amt||amt<=0)return toast('Enter the amount');
+  DB.pays.push({id:uid(),date:document.getElementById('p_date').value||today(),cardId:id,from:PMODE,amt});
+  S();closeSheet();toast('✅ Payment saved');go('card')}
+function billCheck(id){const c=cardById(id);const mk=mkey();
+  const prev=new Date();prev.setMonth(prev.getMonth()-1);const pk=prev.toISOString().slice(0,7);
+  const html=k=>{const emis=emiActive(c,k),emiTot=emis.reduce((s,e)=>s+ +e.mo,0);
+    const sp=DB.exps.filter(e=>e.mode===id&&mkey(e.date)===k);
+    const spTot=sp.reduce((s,e)=>s+ +e.amt,0);
+    const py=DB.pays.filter(p=>p.cardId===id&&mkey(p.date)===k).reduce((s,p)=>s+ +p.amt,0);
+    return`<div class="box"><b>${mlabel(k)}</b>
+    <div class="row between" style="margin-top:6px"><span class="mini">EMI total (${emis.length})</span><span class="num">${fmt(emiTot)}</span></div>
+    <div class="row between"><span class="mini">New spends (${sp.length})</span><span class="num">${fmt(spTot)}</span></div>
+    <div class="row between"><span class="mini">Payments made</span><span class="num" style="color:var(--green2)">-${fmt(py)}</span></div>
+    <div class="row between" style="margin-top:6px;border-top:1px dashed var(--line);padding-top:6px"><b>Expected bill (EMI + spends)</b><b class="num">${fmt(emiTot+spTot)}</b></div>
+    ${sp.length?`<div style="margin-top:8px">${sp.map(e=>{const ct=DB.cats.find(x=>x.id===e.cat)||{em:'📦',nm:''};
+      return`<div class="mini">• ${dfmt(e.date)} ${ct.em} ${esc(ct.nm)}${e.note?' · '+esc(e.note):''} — ${fmt(e.amt)}</div>`}).join('')}</div>`:''}
+    </div>`};
+  openSheet(`<div class="xrow"><h3>🧮 ${esc(c.nm)} — bill cross-check</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <div class="mini" style="margin-bottom:8px">When the bank bill arrives, match it with this — EMIs + new spends added up. Interest/late fees are charged separately by the bank.</div>
+  ${html(mk)}${html(pk)}
+  <div class="box row between"><span>Total outstanding today</span><b class="amt out num">${fmt(cardOut(id))}</b></div>`)}
+
+/* ================= REPORT ================= */
+let RK=mkey();
+function renderRep(){
+  const mk=RK,sp=monthSpend(mk),bud=+DB.budget||0;
+  // category totals
+  const byCat={};DB.exps.filter(e=>mkey(e.date)===mk).forEach(e=>byCat[e.cat]=(byCat[e.cat]||0)+ +e.amt);
+  const cats=DB.cats.map(c=>({...c,v:byCat[c.id]||0})).filter(c=>c.v>0).sort((a,b)=>b.v-a.v);
+  // mode totals
+  const bm={cash:0,bank:0,card:0};
+  DB.exps.filter(e=>mkey(e.date)===mk).forEach(e=>{if(e.mode==='cash')bm.cash+=+e.amt;else if(bankById(e.mode))bm.bank+=+e.amt;else bm.card+=+e.amt});
+  // 6-month trend
+  const tr=[];for(let i=5;i>=0;i--){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);
+    const k=d.toISOString().slice(0,7);tr.push({k,v:monthSpend(k)})}
+  // month nav
+  const dPrev=new Date(mk+'-01');dPrev.setMonth(dPrev.getMonth()-1);
+  const dNext=new Date(mk+'-01');dNext.setMonth(dNext.getMonth()+1);
+  M().innerHTML=`
+  <div class="box row between">
+    <button class="btn sm ghost" onclick="RK='${dPrev.toISOString().slice(0,7)}';renderRep()">◀</button>
+    <b style="font-family:Georgia,serif;font-size:17px">${mlabel(mk)}</b>
+    <button class="btn sm ghost" ${mk>=mkey()?'disabled style="opacity:.3"':''} onclick="RK='${dNext.toISOString().slice(0,7)}';renderRep()">▶</button>
+  </div>
+  <div class="box">
+    <div class="row between"><span>Total spend</span><b class="amt out num" style="font-size:19px">${fmt(sp)}</b></div>
+    ${bud?`<div class="bar" style="margin-top:8px"><i class="${sp>bud?'over':''}" style="width:${Math.min(100,bud?sp/bud*100:0)}%"></i></div>
+    <div class="row between mini" style="margin-top:5px"><span>Budget ${fmt(bud)}</span><span>${sp>bud?'⚠️ '+fmt(sp-bud)+' over budget':'👍 '+fmt(bud-sp)+' within budget'}</span></div>`:''}
+    <div class="row" style="margin-top:10px;gap:6px">
+      <span class="pill">💵 Cash ${fmt(bm.cash)}</span><span class="pill">🏦 Bank ${fmt(bm.bank)}</span><span class="pill">💳 Card ${fmt(bm.card)}</span>
+    </div>
+  </div>
+  <h2 class="sec">Category-wise spend</h2>
+  <div class="box"><canvas id="cv1" height="0"></canvas>
+  ${cats.length?cats.map(c=>{const cb=+c.bud||0;const over=cb&&c.v>cb;
+    return`<div style="padding:8px 2px;border-bottom:1px solid var(--line)">
+    <div class="row between"><span>${c.em} <b>${esc(c.nm)}</b> <span class="mini">${sp?Math.round(c.v/sp*100):0}%</span></span>
+    <span class="num ${over?'amt out':''}">${fmt(c.v)}${cb?' <span class="mini">/ '+fmt(cb)+'</span>':''}</span></div>
+    ${cb?`<div class="bar" style="margin-top:5px;height:6px"><i class="${over?'over':''}" style="width:${Math.min(100,c.v/cb*100)}%"></i></div>`:''}
+    </div>`}).join(''):`<div class="empty">No expenses this month.</div>`}</div>
+  <h2 class="sec">6-month trend</h2>
+  <div class="box"><canvas id="cv2" height="0"></canvas></div>
+  <h2 class="sec">💡 Insights</h2>
+  ${insightsHTML(mk,sp,bud,cats,tr)}`;
+  drawBars('cv1',cats.map(c=>({l:c.em,v:c.v})),false);
+  drawBars('cv2',tr.map(t=>({l:MN[+t.k.slice(5,7)-1],v:t.v,hot:t.k===mk})),true,bud);
+}
+function insightsHTML(mk,sp,bud,cats,tr){
+  const out=[];
+  if(!sp)return`<div class="insight">Add entries for this month and the analysis will appear here.</div>`;
+  if(cats[0])out.push(`Highest spend: <b>${cats[0].em} ${esc(cats[0].nm)}</b> me — ${fmt(cats[0].v)} (${Math.round(cats[0].v/sp*100)}%).`);
+  const overs=cats.filter(c=>+c.bud&&c.v>+c.bud);
+  if(overs.length)out.push(`⚠️ Over budget: ${overs.map(c=>`<b>${esc(c.nm)}</b> (+${fmt(c.v-c.bud)})`).join(', ')} — watch these next month.`);
+  const goods=cats.filter(c=>+c.bud&&c.v<=+c.bud*.8);
+  if(goods.length)out.push(`👏 Under control: ${goods.map(c=>esc(c.nm)).join(', ')} — stayed within budget.`);
+  const i=tr.findIndex(t=>t.k===mk);
+  if(i>0&&tr[i-1].v>0){const d=sp-tr[i-1].v;
+    out.push(d>0?`You spent <b>${fmt(d)} more</b> than last month (${mlabel(tr[i-1].k)}: ${fmt(tr[i-1].v)}).`
+      :`You spent <b>${fmt(-d)} less</b> than last month — well done! 👍`)}
+  if(bud&&sp>bud)out.push(`${fmt(sp-bud)} over your total budget. ${cats[0]?'Cutting down on '+esc(cats[0].nm)+' will help the most.':''}`);
+  return out.map(t=>`<div class="insight">${t}</div>`).join('')}
+function drawBars(id,data,vert,budLine){
+  const cv=document.getElementById(id);if(!cv)return;
+  const W=cv.clientWidth||320,H=170;cv.width=W*2;cv.height=H*2;cv.style.height=H+'px';
+  const x=cv.getContext('2d');x.scale(2,2);x.clearRect(0,0,W,H);
+  if(!data.length||!data.some(d=>d.v>0)){x.fillStyle='#9aa8a0';x.font='13px sans-serif';x.textAlign='center';x.fillText('No data yet',W/2,H/2);return}
+  const max=Math.max(...data.map(d=>d.v),budLine||0)*1.15;
+  const n=data.length,gap=8,bw=Math.min(52,(W-20-gap*(n+1))/n);
+  const x0=(W-(bw*n+gap*(n-1)))/2;
+  data.forEach((d,i)=>{const h=max?d.v/max*(H-44):0;const bx=x0+i*(bw+gap),by=H-26-h;
+    const g=x.createLinearGradient(0,by,0,H-26);
+    g.addColorStop(0,d.hot?'#C29B3C':'#1F7A4D');g.addColorStop(1,d.hot?'#8A6A1E':'#123B2A');
+    x.fillStyle=g;x.beginPath();
+    if(x.roundRect)x.roundRect(bx,by,bw,h,[5,5,0,0]);else x.rect(bx,by,bw,h);
+    x.fill();
+    x.fillStyle='#1C2B24';x.font='600 10px sans-serif';x.textAlign='center';
+    if(d.v)x.fillText((d.v>=1000?(d.v/1000).toFixed(d.v>=10000?0:1)+'k':Math.round(d.v)),bx+bw/2,by-5);
+    x.fillStyle='#6B7A72';x.font='11px sans-serif';x.fillText(d.l,bx+bw/2,H-9)});
+  if(budLine){const y=H-26-(budLine/max*(H-44));x.strokeStyle='#B3402A';x.setLineDash([5,4]);
+    x.beginPath();x.moveTo(8,y);x.lineTo(W-8,y);x.stroke();x.setLineDash([]);
+    x.fillStyle='#B3402A';x.font='600 10px sans-serif';x.textAlign='left';x.fillText('budget',10,y-4)}}
+
+/* ================= SETTINGS + BACKUP ================= */
+function openSettings(){
+  openSheet(`<div class="xrow"><h3>⚙️ Settings</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <label class="f">CASH OPENING BALANCE (in hand today)</label>
+  <input id="s_cash" type="number" inputmode="decimal" value="${DB.cashOpen||''}" placeholder="₹">
+  <label class="f">MONTHLY BUDGET (total)</label>
+  <input id="s_bud" type="number" inputmode="decimal" value="${DB.budget||''}" placeholder="₹ target for the whole month">
+  <h2 class="sec">🏦 Banks</h2>
+  <div id="s_banks">${DB.banks.map(b=>`<div class="row" style="gap:6px;margin-top:6px" data-bank data-id="${b.id}">
+    <input value="${esc(b.nm)}" data-bnm placeholder="Bank name" style="flex:2">
+    <input type="number" value="${b.open||''}" data-bop placeholder="Opening ₹" style="flex:1.3">
+    <button class="x" onclick="this.parentElement.remove()">✕</button></div>`).join('')}</div>
+  <button class="btn sm ghost" style="margin-top:6px" onclick="addBankRow()">➕ Add bank</button>
+  <h2 class="sec">🏷️ Categories &amp; budgets</h2>
+  <div id="s_cats">${DB.cats.map(c=>`<div class="row" style="gap:6px;margin-top:6px" data-cat data-id="${c.id}">
+    <input value="${esc(c.em)}" data-cem style="flex:0 0 52px;text-align:center">
+    <input value="${esc(c.nm)}" data-cnm style="flex:2">
+    <input type="number" value="${c.bud||''}" data-cbud placeholder="Budget ₹" style="flex:1.2">
+    <button class="x" onclick="this.parentElement.remove()">✕</button></div>`).join('')}</div>
+  <button class="btn sm ghost" style="margin-top:6px" onclick="addCatRow()">➕ Add category</button>
+  <button class="btn" style="margin-top:16px" onclick="saveSettings()">💾 Save settings</button>
+  <h2 class="sec">💾 Backup</h2>
+  <div class="two"><button class="btn ghost" onclick="doBackup()">⬇️ Download backup</button>
+  <button class="btn ghost" onclick="document.getElementById('s_file').click()">⬆️ Restore</button></div>
+  <input type="file" id="s_file" accept=".json" class="hide" onchange="doRestore(this)">
+  <div class="mini" style="margin-top:8px">Data lives only on this device — take a backup at least once a week (voice notes are included).</div>`)}
+function addBankRow(){document.getElementById('s_banks').insertAdjacentHTML('beforeend',
+  `<div class="row" style="gap:6px;margin-top:6px" data-bank data-id=""><input data-bnm placeholder="Bank name" style="flex:2"><input type="number" data-bop placeholder="Opening ₹" style="flex:1.3"><button class="x" onclick="this.parentElement.remove()">✕</button></div>`)}
+function addCatRow(){document.getElementById('s_cats').insertAdjacentHTML('beforeend',
+  `<div class="row" style="gap:6px;margin-top:6px" data-cat data-id=""><input data-cem value="🏷️" style="flex:0 0 52px;text-align:center"><input data-cnm placeholder="Name" style="flex:2"><input type="number" data-cbud placeholder="Budget ₹" style="flex:1.2"><button class="x" onclick="this.parentElement.remove()">✕</button></div>`)}
+function saveSettings(){
+  DB.cashOpen=+document.getElementById('s_cash').value||0;
+  DB.budget=+document.getElementById('s_bud').value||0;
+  DB.banks=[...document.querySelectorAll('#s_banks [data-bank]')].map(r=>({
+    id:r.dataset.id||uid(),nm:r.querySelector('[data-bnm]').value.trim(),open:+r.querySelector('[data-bop]').value||0}))
+    .filter(b=>b.nm);
+  DB.cats=[...document.querySelectorAll('#s_cats [data-cat]')].map(r=>({
+    id:r.dataset.id||uid(),em:r.querySelector('[data-cem]').value.trim()||'🏷️',
+    nm:r.querySelector('[data-cnm]').value.trim(),bud:+r.querySelector('[data-cbud]').value||0}))
+    .filter(c=>c.nm);
+  S();closeSheet();toast('✅ Settings saved');go(CUR)}
+async function doBackup(){
+  const auds={};for(const e of DB.exps){if(e.aud){const b=await audGet(e.id);
+    if(b)auds[e.id]=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(b)})}}
+  const blob=new Blob([JSON.stringify({db:DB,auds})],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='expense-manager-backup-'+today()+'.json';a.click();toast('✅ Backup downloaded')}
+function doRestore(inp){const f=inp.files[0];if(!f)return;
+  if(!confirm('Restoring will REPLACE all current data. Continue?'))return;
+  const fr=new FileReader();fr.onload=async()=>{try{
+    const d=JSON.parse(fr.result);DB=d.db;S();
+    for(const id in (d.auds||{})){const res=await fetch(d.auds[id]);audPut(id,await res.blob())}
+    toast('✅ Restore complete');go('home')}catch(e){toast('Could not read the file')}};
+  fr.readAsText(f)}
+
+/* ================= SHEET + INIT ================= */
+function openSheet(html){document.getElementById('sheetIn').innerHTML=html;
+  document.getElementById('sheet').classList.add('on')}
+function closeSheet(){document.getElementById('sheet').classList.remove('on')}
+document.getElementById('sheet').addEventListener('click',e=>{if(e.target.id==='sheet')closeSheet()});
+if(!DB.banks.length&&!DB.exps.length&&!DB.led.length&&!+DB.cashOpen){
+  go('home');setTimeout(()=>{openSettings();toast('👋 Set your opening balances first')},400);
+}else go('home');
+</script>
+</body>
+</html>
