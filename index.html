@@ -112,7 +112,7 @@ audio{display:none}
 <body>
 <header class="app">
   <div class="logo">₹</div>
-  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v12</span></h1>
+  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v14</span></h1>
   <button class="hbtn" onclick="openSettings()">⚙️</button>
 </header>
 <main id="main"></main>
@@ -252,11 +252,80 @@ function renderHome(){
     <button class="btn ghost" onclick="go('rep')">📊 Reports &amp; charts</button>
   </div>
   ${cardTot?`<div class="box row between"><span>💳 Total card outstanding</span><b class="amt out num">${fmt(cardTot)}</b></div>`:''}
+  ${aheadHTML()}
   ${lenDenHTML()}
   <h2 class="sec">Recent entries</h2>
   <div class="box">${lastEntriesHTML(8)}</div>`;
 }
 /* Lena-den at a glance — the number he needs before he answers the phone. */
+/* Everything already known to be leaving, in date order. */
+function commitments(days){
+  const T=new Date(today()+'T00:00'), out=[];
+  const within=d=>{const x=Math.round((d-T)/86400000);return x>=0&&x<=days?x:null};
+  const nextOn=day=>{ if(!day)return null;
+    const d=new Date(T); d.setDate(day);
+    if(d<T){d.setMonth(d.getMonth()+1);d.setDate(day);}
+    return d};
+  // credit card bills — the outstanding is what he will be asked for
+  DB.cards.forEach(c=>{
+    const due=nextOn(+c.dueDay); if(!due)return;
+    const n=within(due); if(n===null)return;
+    const amt=cardOut(c.id); if(amt<=0)return;
+    out.push({d:n,date:due.toISOString().slice(0,10),em:'💳',nm:c.nm+' bill',amt,kind:'card'});
+  });
+  // EMIs still running this month
+  const mk=mkey();
+  DB.cards.forEach(c=>emiActive(c,mk).forEach(e=>{
+    const due=nextOn(+c.dueDay||5); const n=due?within(due):null; if(n===null)return;
+    out.push({d:n,date:due.toISOString().slice(0,10),em:'🏦',nm:e.nm+' EMI',amt:+e.mo||0,kind:'emi'});
+  }));
+  // money he promised to return, and money owed to him coming due
+  DB.led.forEach(l=>{ if(l.typ==='xfer'||!l.due)return;
+    const d=new Date(l.due+'T00:00'); const n=within(d);
+    if(n===null&&d>=T)return;
+    const late=d<T;
+    out.push({d:late?-1:n,date:l.due,em:l.typ==='in'?'🔴':'🟢',
+      nm:l.party+(l.why?' · '+l.why:''),amt:+l.amt,
+      kind:l.typ==='in'?'pay':'get',late});
+  });
+  // bills that repeat every month, if he has marked them
+  (DB.tiles||[]).forEach(t=>{ if(!+t.rep)return;
+    const due=nextOn(+t.rep); const n=due?within(due):null; if(n===null)return;
+    out.push({d:n,date:due.toISOString().slice(0,10),em:t.em,nm:t.nm,amt:+t.amt||0,kind:'bill',guess:!t.amt});
+  });
+  return out.sort((a,b)=>a.d-b.d)}
+function cashNow(){
+  let v=accBal('cash'); DB.banks.forEach(b=>v+=accBal(b.id)); return v}
+/* The one number he actually needs before deciding anything. */
+function aheadHTML(){
+  const list=commitments(30);
+  const outgo=list.filter(x=>x.kind!=='get').reduce((s,x)=>s+x.amt,0);
+  const incom=list.filter(x=>x.kind==='get').reduce((s,x)=>s+x.amt,0);
+  if(!list.length)return '';
+  const have=cashNow(), left=have+incom-outgo;
+  const late=list.filter(x=>x.late).length;
+  return `<div class="box" onclick="aheadView()" style="cursor:pointer;border-left:4px solid ${left<0?'var(--red)':'var(--green2)'}">
+    <div class="row between"><b>📅 Agle 30 din</b><span class="mini">tap for details ›</span></div>
+    <div class="row between" style="margin-top:8px">
+      <div><div class="mini">Dena hai</div><b class="amt out num">${fmt(outgo)}</b></div>
+      <div class="right"><div class="mini">Paas hai</div><b class="num">${fmt(have)}</b></div>
+    </div>
+    <div class="row between" style="margin-top:8px;border-top:1px dashed var(--line);padding-top:8px">
+      <span>${left<0?'⚠️ Kam pad raha hai':'👍 Bach jayega'}</span>
+      <b class="amt ${left<0?'out':'in'} num">${fmt(Math.abs(left))}</b></div>
+    ${late?`<div class="mini" style="margin-top:6px;color:var(--red)">⏰ ${late} cheez ki tareekh nikal chuki hai</div>`:''}
+  </div>`}
+function aheadView(){
+  const list=commitments(60);
+  openSheet(`<div class="xrow"><h3>📅 Aage kya aa raha hai</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <div class="box row between"><span>Cash + Bank abhi</span><b class="num">${fmt(cashNow())}</b></div>
+  <div class="box">${list.length?list.map(x=>`
+    <div class="item"><div class="em">${x.em}</div>
+      <div class="grow"><div class="nm">${esc(x.nm)}${x.guess?' <span class="mini">(amount set karo)</span>':''}</div>
+        <div class="sub">${x.late?'<b style="color:var(--red)">tareekh nikal gayi</b> · ':(x.d===0?'<b>aaj</b> · ':x.d+' din baad · ')}${dfmt(x.date)}</div></div>
+      <div class="amt ${x.kind==='get'?'in':'out'} num">${x.kind==='get'?'+':'-'}${fmt(x.amt)}</div></div>`).join('')
+    :`<div class="empty">Abhi kuch pata nahi hai.<br>Card ki due date, udhaar ki return date, ya mahine ke pakke bill (⚡ Shortcuts me) set karoge toh yahan dikhega.</div>`}</div>
+  <div class="mini">💡 Har mahine aane wale bill — school fee, cylinder, phone — ⚡ Shortcuts me "har mahine" set kar do, phir wo bhi yahan apne aap aa jayenge.</div>`)}
 function lenDenHTML(){
   const m=partyBalances();
   let get=0,give=0; Object.values(m).forEach(v=>{ if(v>0)get+=v; else give+=-v; });
@@ -295,11 +364,13 @@ function tileChips(){ if(!(DB.tiles||[]).length)return '';
   return (DB.tiles||[]).map(t=>`<button class="chip" onclick="tapTile('${t.id}')">${t.em} ${esc(t.nm)}</button>`).join('')
     +`<button class="chip" onclick="manageTiles()">✏️</button>`}
 function tapTile(id){const t=(DB.tiles||[]).find(x=>x.id===id);if(!t)return;
+  const a0=document.getElementById('e_amt'); const typed=a0?a0.value:'';
   F.cat=t.cat||F.cat; F.who=t.who||'me';
+  renderExp();
   const n=document.getElementById('e_note'); if(n&&!n.value)n.value=t.nm;
-  renderExpChips();
-  const a=document.getElementById('e_amt'); if(a){a.focus();}
-  toast(t.em+' '+t.nm+' — ab amount likho')}
+  const a=document.getElementById('e_amt');
+  if(a){ a.value=typed||(t.amt?t.amt:''); a.focus(); }
+  toast(t.em+' '+t.nm+(t.amt&&!typed?' — ₹'+t.amt+' bhara hai, badal sakte ho':' — ab amount likho'))}
 function manageTiles(){
   openSheet(`<div class="xrow"><h3>⚡ Shortcuts</h3><button class="x" onclick="setBack()">‹</button></div>
   <div class="mini" style="margin-bottom:10px">Jo kharche baar-baar hote hain unke buttons. Expenses screen pe tap karoge toh category apne aap set ho jayegi.</div>
@@ -311,7 +382,7 @@ function tileTile(t){const c=DB.cats.find(x=>x.id===t.cat);
   return`<div class="ctile" onclick="tileEdit('${t.id}')">
     <div class="cem">${t.em||'🏷️'}</div>
     <div class="cnm">${esc(t.nm)}</div>
-    <div class="cbd">${t.who==='shop'?'🏪 Shop':(c?esc(c.nm):'—')}</div></div>`}
+    <div class="cbd">${+t.rep?('📅 '+t.rep+' tarikh'):(t.who==='shop'?'🏪 Shop':(c?esc(c.nm):'—'))}</div></div>`}
 function tileEdit(id){
   const t=id?(DB.tiles||[]).find(x=>x.id===id):{em:'🏷️',nm:'',cat:(DB.cats[0]||{}).id,who:'me'};
   if(!t)return;
@@ -324,13 +395,20 @@ function tileEdit(id){
   <select id="te_cat">${DB.cats.map(c=>`<option value="${c.id}" ${t.cat===c.id?'selected':''}>${c.em} ${esc(c.nm)}</option>`).join('')}</select>
   <label class="f">KISKE LIYE?</label>
   <select id="te_who"><option value="me" ${t.who!=='shop'?'selected':''}>🏠 Personal</option><option value="shop" ${t.who==='shop'?'selected':''}>🏪 Shop — PARAMPARA</option></select>
+  <label class="f">HAR MAHINE AATA HAI? (optional)</label>
+  <div class="row" style="gap:8px">
+    <input id="te_rep" type="number" inputmode="numeric" min="1" max="31" value="${t.rep||''}" placeholder="Mahine ki tareekh" class="grow">
+    <input id="te_amt" type="number" inputmode="numeric" value="${t.amt||''}" placeholder="₹ kitna" style="flex:1">
+  </div>
+  <div class="mini" style="margin-top:6px">Bharoge toh 📅 "Agle 30 din" me apne aap dikhega — school fee, cylinder, phone bill jaise pakke kharche.</div>
   <button class="btn" style="margin-top:16px" onclick="tileSave('${id}')">💾 Save</button>
   ${id?`<button class="btn red" style="margin-top:8px" onclick="tileDel('${id}')">🗑️ Delete</button>`:''}`)}
 function tileSave(id){
   const nm=document.getElementById('te_nm').value.trim();
   if(!nm)return toast('Name likho');
   const obj={em:document.getElementById('te_em').value.trim()||'🏷️',nm,
-    cat:document.getElementById('te_cat').value,who:document.getElementById('te_who').value};
+    cat:document.getElementById('te_cat').value,who:document.getElementById('te_who').value,
+    rep:+document.getElementById('te_rep').value||0, amt:+document.getElementById('te_amt').value||0};
   DB.tiles=DB.tiles||[];
   if(id){Object.assign(DB.tiles.find(x=>x.id===id),obj)}else{DB.tiles.push(Object.assign({id:uid()},obj))}
   S();toast('✅ Saved');manageTiles()}
@@ -1031,6 +1109,111 @@ function doRestore(inp){const f=inp.files[0];if(!f)return;
     toast('✅ Restore complete');go('home')}catch(e){toast('Could not read the file')}};
   fr.readAsText(f)}
 
+
+/* ================= SHARED MESSAGE → EXPENSE =================
+   Reading SMS directly is impossible from a web app, and Gmail's inbox permission would
+   make him log in again every 7 days. Sharing works on BOTH: hold the bank SMS or the
+   bank email → Share → Expense Manager, and the entry arrives already filled in.
+   Nothing to set up, no login, no permission. */
+function parseTxn(raw){
+  if(!raw)return null;
+  const s=String(raw).replace(/\s+/g,' ').trim();
+  const low=s.toLowerCase();
+
+  // amount — first money-looking figure
+  let m=low.match(/(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/);
+  if(!m)m=low.match(/([\d,]+\.\d{2})\s*(?:rs\.?|inr|₹)/);
+  if(!m)return null;
+  const amt=+m[1].replace(/,/g,'');
+  if(!amt||amt<=0)return null;
+
+  // direction
+  const out=/\b(debit(?:ed)?|spent|paid|withdrawn|purchase|sent|deducted)\b/.test(low);
+  const inn=/\b(credit(?:ed)?|received|deposit(?:ed)?|refund(?:ed)?)\b/.test(low);
+  const dir = out&&!inn ? 'out' : (inn&&!out ? 'in' : (out?'out':'in'));
+
+  // last 4 digits of the account or card it went through
+  let acc=null;
+  let a=s.match(/(?:a\/c|acct|account|card|ac)\s*(?:no\.?)?\s*[:# ]*\s*(?:x+|\*+|X+)?\s*(\d{4})\b/i)
+      || s.match(/(?:x{2,}|\*{2,})\s*(\d{4})\b/i);
+  if(a)acc=a[1];
+
+  // who it went to
+  let who=null;
+  let w=s.match(/\b(?:to\s+VPA|to\s+vpa)\s+([^\s,.;]+)/i)
+     || s.match(/\bat\s+([A-Z0-9][A-Za-z0-9 &._-]{2,30}?)(?:\s+on\b|\s+for\b|[.,;]|$)/)
+     || s.match(/\bto\s+([A-Z][A-Za-z0-9 &._-]{2,30}?)(?:\s+on\b|[.,;]|$)/);
+  if(w){ who=w[1].trim().replace(/@\w+$/,''); }
+  if(who&&/^(your|a\/c|account|vpa)$/i.test(who))who=null;
+
+  // date — dd-mm-yy(yy), dd/mm/yy, ddMonyy
+  let date=null;
+  let d=s.match(/\b(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})\b/);
+  if(d){ let y=+d[3]; if(y<100)y+=2000; date=y+'-'+String(+d[2]).padStart(2,'0')+'-'+String(+d[1]).padStart(2,'0'); }
+  else{
+    const MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+    d=s.match(/\b(\d{1,2})[- ]?([A-Za-z]{3})[- ]?(\d{2,4})\b/);
+    if(d&&MON[d[2].toLowerCase()]){ let y=+d[3]; if(y<100)y+=2000;
+      date=y+'-'+String(MON[d[2].toLowerCase()]).padStart(2,'0')+'-'+String(+d[1]).padStart(2,'0'); }
+  }
+  const isCard=/\bcard\b/i.test(s);
+  return {amt,dir,acc,who,date,isCard};
+}
+
+/* Match the account/card the bank named to one he has added, by its last 4 digits. */
+function accByLast4(d,isCard){
+  if(!d)return null;
+  const c=(DB.cards||[]).find(x=>String(x.nm).includes(d)||String(x.last4||'')===d);
+  if(c)return c.id;
+  const b=(DB.banks||[]).find(x=>String(x.nm).includes(d)||String(x.last4||'')===d);
+  if(b)return b.id;
+  return null;
+}
+function handleShared(){
+  let txt='';
+  try{ const q=new URLSearchParams(location.search);
+    txt=[q.get('text'),q.get('title'),q.get('url')].filter(Boolean).join(' '); }catch(e){}
+  if(!txt)return false;
+  try{ history.replaceState(null,'',location.pathname); }catch(e){}
+  const p=parseTxn(txt);
+  if(!p){ toast('Is message me koi amount nahi mila'); return false; }
+  sharedSheet(p,txt);
+  return true;
+}
+function sharedSheet(p,raw){
+  const mode=accByLast4(p.acc,p.isCard)||'cash';
+  openSheet(`<div class="xrow"><h3>📩 Message se entry</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <div class="box">
+    <div class="row between"><b>${p.dir==='out'?'Kharcha':'Paisa aaya'}</b>
+      <b class="amt ${p.dir==='out'?'out':'in'} num" style="font-size:22px">${fmt(p.amt)}</b></div>
+    ${p.who?`<div class="mini" style="margin-top:4px">${esc(p.who)}</div>`:''}
+    <div class="mini" style="margin-top:4px">${p.date?dfmt(p.date):'aaj'}${p.acc?' · ...'+p.acc:''}
+      ${accByLast4(p.acc,p.isCard)?'':(p.acc?' <b style="color:var(--gold)">(ye account app me nahi hai)</b>':'')}</div>
+  </div>
+  <div class="mini" style="margin:8px 2px">${esc(raw.slice(0,140))}${raw.length>140?'…':''}</div>
+  ${p.dir==='out'
+    ? `<button class="btn" onclick="sharedToExpense(${p.amt},'${p.date||''}','${esc(p.who||'').replace(/'/g,"")}','${mode}')">🧾 Kharche me daalo</button>`
+    : `<button class="btn" onclick="sharedToLedger(${p.amt},'${p.date||''}','${esc(p.who||'').replace(/'/g,"")}','${mode}')">⬇️ Paisa aaya — Ledger me daalo</button>`}
+  <div class="mini" style="margin-top:10px">Category aur baaki cheezein agli screen pe chun lena.</div>`)}
+function sharedToExpense(amt,date,who,mode){
+  closeSheet(); F={cat:null,mode:mode||'cash',aud:null,who:'me'};
+  go('exp');
+  setTimeout(()=>{
+    const a=document.getElementById('e_amt'); if(a)a.value=amt;
+    const n=document.getElementById('e_note'); if(n&&who)n.value=who;
+    const d=document.getElementById('e_date'); if(d&&date)d.value=date;
+    toast('Category chuno aur save karo');
+  },60)}
+function sharedToLedger(amt,date,who,mode){
+  closeSheet(); L={typ:'in',mode:(mode&&mode!=='cash')?mode:'cash',why:'',due:''};
+  go('led');
+  setTimeout(()=>{
+    const a=document.getElementById('l_amt'); if(a)a.value=amt;
+    const pn=document.getElementById('l_party'); if(pn&&who)pn.value=who;
+    const d=document.getElementById('l_date'); if(d&&date)d.value=date;
+    toast('Kiska paisa hai, confirm kar lo');
+  },60)}
+
 /* ================= SHEET + INIT ================= */
 function openSheet(html){document.getElementById('sheetIn').innerHTML=html;
   document.getElementById('sheet').classList.add('on')}
@@ -1042,6 +1225,7 @@ if(!_seen){
   try{localStorage.setItem('pb_khata_seen','1')}catch(e){}
   go('home');setTimeout(()=>{openSettings();toast('👋 Set your opening balances first')},400);
 }else go('home');
+handleShared();
 </script>
 </body>
 </html>
