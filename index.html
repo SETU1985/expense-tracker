@@ -99,13 +99,20 @@ audio{display:none}
 .tabs{display:flex;gap:6px;margin-bottom:10px}
 .tabs button{flex:1;border:1.5px solid var(--line);background:#fff;border-radius:10px;padding:9px;font-weight:700;font-size:13.5px;color:var(--mut)}
 .tabs button.on{background:var(--green);border-color:var(--green);color:#fff}
+.cgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ctile{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 6px;text-align:center;box-shadow:var(--sh);cursor:pointer}
+.ctile:active{border-color:var(--gold);transform:scale(.97)}
+.ctile.add{border-style:dashed;background:transparent;box-shadow:none}
+.cem{font-size:22px;line-height:1.2}
+.cnm{font-size:12px;font-weight:700;margin-top:3px;line-height:1.25;word-break:break-word}
+.cbd{font-size:10.5px;color:var(--mut);margin-top:2px}
 .insight{border-left:4px solid var(--gold);background:#fff;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:13.5px;box-shadow:var(--sh)}
 </style>
 </head>
 <body>
 <header class="app">
   <div class="logo">₹</div>
-  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v8</span></h1>
+  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v11</span></h1>
   <button class="hbtn" onclick="openSettings()">⚙️</button>
 </header>
 <main id="main"></main>
@@ -192,7 +199,13 @@ function cardById(id){return DB.cards.find(c=>c.id===id)}
 function modeName(m){if(m==='cash')return'Cash';if(m==='open')return'📖 Opening balance';const b=bankById(m);if(b)return b.nm;const c=cardById(m);if(c)return c.nm+' 💳';return m}
 function accBal(id){ // 'cash' or bankId
   let v=id==='cash'?(+DB.cashOpen||0):(+((bankById(id)||{}).open)||0);
-  DB.led.forEach(l=>{if(l.mode===id)v+=l.typ==='in'?+l.amt:-l.amt});
+  DB.led.forEach(l=>{
+    if(l.typ==='xfer'){                       // own money moving — one side out, other in
+      if(l.from===id)v-=+l.amt;
+      if(l.to===id)v+=+l.amt;
+      return;
+    }
+    if(l.mode===id)v+=l.typ==='in'?+l.amt:-l.amt});
   DB.exps.forEach(e=>{if(e.mode===id)v-=+e.amt});
   DB.pays.forEach(p=>{if(p.from===id)v-=+p.amt});
   return v}
@@ -265,7 +278,9 @@ function lastEntriesHTML(n){
   return all.map(x=>{
     if(x._k==='e'){const c=DB.cats.find(k=>k.id===x.cat)||{em:'📦',nm:'Other'};
       return rowHTML(c.em,esc(c.nm)+(x.note?' · '+esc(x.note):''),dfmt(x.date)+' · '+modeName(x.mode),'-'+fmt(x.amt),'out',x.aud?x.id:null)}
-    if(x._k==='l')return rowHTML(x.typ==='in'?'⬇️':'⬆️',esc(x.party||'—'),dfmt(x.date)+' · '+modeName(x.mode)+(x.note?' · '+esc(x.note):''),(x.typ==='in'?'+':'-')+fmt(x.amt),x.typ==='in'?'in':'out')
+    if(x._k==='l'){
+      if(x.typ==='xfer')return rowHTML('🔄',esc(modeName(x.from))+' → '+esc(modeName(x.to)),dfmt(x.date)+' · transfer',fmt(x.amt),'');
+      return rowHTML(x.typ==='in'?'⬇️':'⬆️',esc(x.party||'—')+(x.why?' · '+esc(x.why):''),dfmt(x.date)+' · '+modeName(x.mode)+(x.note?' · '+esc(x.note):''),(x.typ==='in'?'+':'-')+fmt(x.amt),x.typ==='in'?'in':'out')}
     return rowHTML('💳','Card payment · '+esc((cardById(x.cardId)||{}).nm||''),dfmt(x.date)+' · from '+modeName(x.from),'-'+fmt(x.amt),'out')
   }).join('')}
 function rowHTML(em,nm,sub,amt,cls,audId){
@@ -287,24 +302,42 @@ function tapTile(id){const t=(DB.tiles||[]).find(x=>x.id===id);if(!t)return;
   const a=document.getElementById('e_amt'); if(a){a.focus();}
   toast(t.em+' '+t.nm+' — ab amount likho')}
 function manageTiles(){
-  openSheet(`<div class="xrow"><h3>✏️ Shortcuts</h3><button class="x" onclick="closeSheet()">✕</button></div>
-  <div class="mini" style="margin-bottom:8px">Jo kharche baar-baar hote hain unke shortcut. Tap karo, category apne aap set ho jayegi.</div>
-  <div id="tl_rows">${(DB.tiles||[]).map(t=>tileRow(t)).join('')}</div>
-  <button class="btn sm ghost" style="margin-top:8px" onclick="addTileRow()">➕ Add shortcut</button>
-  <button class="btn" style="margin-top:14px" onclick="saveTiles()">💾 Save</button>`)}
-function tileRow(t){return`<div class="row" style="gap:6px;margin-top:6px" data-tile data-id="${t.id||''}">
-  <input value="${esc(t.em||'🏷️')}" data-tem style="flex:0 0 52px;text-align:center">
-  <input value="${esc(t.nm||'')}" data-tnm placeholder="Name" style="flex:2">
-  <select data-tcat style="flex:1.6">${DB.cats.map(c=>`<option value="${c.id}" ${t.cat===c.id?'selected':''}>${esc(c.nm)}</option>`).join('')}</select>
-  <select data-twho style="flex:0 0 96px"><option value="me" ${t.who!=='shop'?'selected':''}>Personal</option><option value="shop" ${t.who==='shop'?'selected':''}>Shop</option></select>
-  <button class="x" onclick="this.parentElement.remove()">✕</button></div>`}
-function addTileRow(){document.getElementById('tl_rows').insertAdjacentHTML('beforeend',tileRow({}))}
-function saveTiles(){
-  DB.tiles=[...document.querySelectorAll('#tl_rows [data-tile]')].map(r=>({
-    id:r.dataset.id||uid(), em:r.querySelector('[data-tem]').value.trim()||'🏷️',
-    nm:r.querySelector('[data-tnm]').value.trim(), cat:r.querySelector('[data-tcat]').value,
-    who:r.querySelector('[data-twho]').value })).filter(t=>t.nm);
-  S();closeSheet();toast('✅ Shortcuts saved');renderExp()}
+  openSheet(`<div class="xrow"><h3>⚡ Shortcuts</h3><button class="x" onclick="setBack()">‹</button></div>
+  <div class="mini" style="margin-bottom:10px">Jo kharche baar-baar hote hain unke buttons. Expenses screen pe tap karoge toh category apne aap set ho jayegi.</div>
+  <div class="cgrid">
+    ${(DB.tiles||[]).map(t=>tileTile(t)).join('')}
+    <div class="ctile add" onclick="tileEdit('')"><div class="cem">➕</div><div class="cnm">Add</div></div>
+  </div>`)}
+function tileTile(t){const c=DB.cats.find(x=>x.id===t.cat);
+  return`<div class="ctile" onclick="tileEdit('${t.id}')">
+    <div class="cem">${t.em||'🏷️'}</div>
+    <div class="cnm">${esc(t.nm)}</div>
+    <div class="cbd">${t.who==='shop'?'🏪 Shop':(c?esc(c.nm):'—')}</div></div>`}
+function tileEdit(id){
+  const t=id?(DB.tiles||[]).find(x=>x.id===id):{em:'🏷️',nm:'',cat:(DB.cats[0]||{}).id,who:'me'};
+  if(!t)return;
+  openSheet(`<div class="xrow"><h3>${id?'Edit shortcut':'New shortcut'}</h3><button class="x" onclick="manageTiles()">‹</button></div>
+  <div class="row" style="gap:8px">
+    <input id="te_em" value="${esc(t.em||'🏷️')}" style="flex:0 0 64px;text-align:center;font-size:24px">
+    <input id="te_nm" value="${esc(t.nm||'')}" placeholder="Zepto, School fee..." class="grow">
+  </div>
+  <label class="f">CATEGORY</label>
+  <select id="te_cat">${DB.cats.map(c=>`<option value="${c.id}" ${t.cat===c.id?'selected':''}>${c.em} ${esc(c.nm)}</option>`).join('')}</select>
+  <label class="f">KISKE LIYE?</label>
+  <select id="te_who"><option value="me" ${t.who!=='shop'?'selected':''}>🏠 Personal</option><option value="shop" ${t.who==='shop'?'selected':''}>🏪 Shop — PARAMPARA</option></select>
+  <button class="btn" style="margin-top:16px" onclick="tileSave('${id}')">💾 Save</button>
+  ${id?`<button class="btn red" style="margin-top:8px" onclick="tileDel('${id}')">🗑️ Delete</button>`:''}`)}
+function tileSave(id){
+  const nm=document.getElementById('te_nm').value.trim();
+  if(!nm)return toast('Name likho');
+  const obj={em:document.getElementById('te_em').value.trim()||'🏷️',nm,
+    cat:document.getElementById('te_cat').value,who:document.getElementById('te_who').value};
+  DB.tiles=DB.tiles||[];
+  if(id){Object.assign(DB.tiles.find(x=>x.id===id),obj)}else{DB.tiles.push(Object.assign({id:uid()},obj))}
+  S();toast('✅ Saved');manageTiles()}
+function tileDel(id){
+  if(!confirm('Delete this shortcut?'))return;
+  DB.tiles=(DB.tiles||[]).filter(t=>t.id!==id);S();toast('✅ Deleted');manageTiles()}
 function renderExp(){
   const mk=mkey();
   M().innerHTML=`
@@ -424,6 +457,31 @@ function dropRec(){F.aud=null;document.getElementById('e_hasaud').classList.add(
 let L={typ:'in',mode:'cash',why:'',due:''};
 const WHYS_IN=['Udhaar liya','Wapsi mili','Business ka','Gift','Salary/Income'];
 const WHYS_OUT=['Udhaar diya','Wapsi ki','Business ka','Gift','Madad ki'];
+function allAccs(){return [{id:'cash',nm:'💵 Cash'}].concat(DB.banks.map(b=>({id:b.id,nm:'🏦 '+b.nm})))}
+function xferFormHTML(){
+  const A=allAccs();
+  if(A.length<2)return `<div class="mini" style="margin:10px 0">Transfer ke liye kam se kam ek bank chahiye. ⚙️ Settings → Banks me jodo.</div>
+    <button class="btn ghost" onclick="closeSheet();openSettings()">⚙️ Add a bank</button>`;
+  return `
+    <label class="f">KAHAN SE</label>
+    <select id="x_from">${A.map(a=>`<option value="${a.id}" ${L.xf===a.id?'selected':''}>${esc(a.nm)} — ${fmt(accBal(a.id))}</option>`).join('')}</select>
+    <label class="f">KAHAN</label>
+    <select id="x_to">${A.map((a,i)=>`<option value="${a.id}" ${(L.xt?L.xt===a.id:i===1)?'selected':''}>${esc(a.nm)}</option>`).join('')}</select>
+    <label class="f">NOTE (optional)</label>
+    <input id="x_note" placeholder="ATM se nikala / bank me jama kiya...">
+    <div class="row" style="margin-top:12px;gap:8px">
+      <input id="l_date" type="date" value="${today()}" style="max-width:150px">
+      <button class="btn grow" onclick="saveXfer()">🔄 Save transfer</button>
+    </div>
+    <div class="mini" style="margin-top:8px">🔄 Apna hi paisa ek jagah se doosri jagah. <b>Ye kharcha NAHI hai</b> — mahine ke total me nahi jodega, sirf dono balance badlenge.</div>`}
+function saveXfer(){
+  const amt=+document.getElementById('l_amt').value;
+  if(!amt||amt<=0)return toast('Enter the amount');
+  const f=document.getElementById('x_from').value, to=document.getElementById('x_to').value;
+  if(f===to)return toast('Dono jagah ek hi hai — alag chuno');
+  DB.led.push({id:uid(),date:document.getElementById('l_date').value||today(),typ:'xfer',
+    from:f,to:to,amt,note:document.getElementById('x_note').value.trim(),party:'',why:'',due:''});
+  S();toast('🔄 '+fmt(amt)+' — '+modeName(f)+' → '+modeName(to));renderLed()}
 function whyChips(){const list=L.typ==='in'?WHYS_IN:WHYS_OUT;
   return list.map(w=>`<button class="chip ${L.why===w?'on':''}" onclick="L.why=(L.why==='${w}'?'':'${w}');renderLed()">${w}</button>`).join('')}
 function renderLed(){
@@ -432,8 +490,10 @@ function renderLed(){
     <div class="tabs">
       <button class="${L.typ==='in'?'on':''}" onclick="L.typ='in';renderLed()">⬇️ Money IN (received)</button>
       <button class="${L.typ==='out'?'on':''}" onclick="L.typ='out';renderLed()">⬆️ Money OUT (given)</button>
+      <button class="${L.typ==='xfer'?'on':''}" onclick="L.typ='xfer';renderLed()">🔄 Transfer</button>
     </div>
     <input class="bigamt num" id="l_amt" type="number" inputmode="decimal" placeholder="₹ Amount">
+    ${L.typ==='xfer'?xferFormHTML():`
     <label class="f">PARTY (from whom / to whom)</label>
     <input id="l_party" list="l_parties" placeholder="Type a name or pick from the list">
     <datalist id="l_parties">${[...new Set(DB.led.map(x=>x.party).filter(Boolean))].map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
@@ -455,7 +515,7 @@ function renderLed(){
       <input id="l_date" type="date" value="${today()}" style="max-width:150px">
       <button class="btn grow ${L.typ==='out'?'red':''}" onclick="saveLed()">💾 Save ${L.typ==='in'?'IN':'OUT'}</button>
     </div>
-    <div class="mini" style="margin-top:8px">⚠️ This is NOT an expense — only money in/out of cash or bank. Balances update directly.</div>
+    <div class="mini" style="margin-top:8px">⚠️ This is NOT an expense — only money in/out of cash or bank. Balances update directly.</div>`}
   </div>
   ${dueSoonHTML()}
   <h2 class="sec">Debtors &amp; Creditors (party balances)</h2>
@@ -474,7 +534,8 @@ function dueSoonHTML(){
      <div class="grow"><div class="nm">${esc(x.l.party)}${x.l.why?' · <span style="font-weight:500">'+esc(x.l.why)+'</span>':''}</div>
      <div class="sub">${x.d<0?(-x.d)+' din late':x.d===0?'aaj':x.d+' din baaki'} · ${x.l.typ==='out'?'aapko milna hai':'aapko dena hai'}</div></div>
      <div class="amt ${x.l.typ==='out'?'in':'out'} num">${fmt(x.l.amt)}</div></div>`).join('')}</div>`}
-function partyBalances(){const m={};DB.led.forEach(l=>{if(!l.party)return;
+function partyBalances(){const m={};DB.led.forEach(l=>{
+  if(l.typ==='xfer'||!l.party)return;         // a transfer is nobody's debt
   m[l.party]=(m[l.party]||0)+(l.typ==='out'?+l.amt:-l.amt)});return m}
 function partyHTML(){const m=partyBalances();const ks=Object.keys(m).filter(p=>Math.round(m[p])!==0);
   if(!ks.length)return`<div class="empty">No open balances. Add a party name on IN/OUT entries (or an 📖 Opening balance) and the running balance will build here.</div>`;
@@ -508,11 +569,17 @@ function waParty(p){
   window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank');}
 function ledListHTML(){const L2=[...DB.led].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id)).slice(0,40);
   if(!L2.length)return`<div class="empty">No ledger entries yet.</div>`;
-  return L2.map(l=>`<div class="item"><div class="em">${l.typ==='in'?'⬇️':'⬆️'}</div>
+  return L2.map(l=>{
+   if(l.typ==='xfer')return`<div class="item"><div class="em">🔄</div>
+    <div class="grow"><div class="nm">${esc(modeName(l.from))} → ${esc(modeName(l.to))}</div>
+    <div class="sub">${dfmt(l.date)} · transfer${l.note?' · '+esc(l.note):''}</div></div>
+    <div class="amt num" style="color:var(--mut)">${fmt(l.amt)}</div>
+    <button class="x" onclick="delLed('${l.id}')">🗑️</button></div>`;
+   return`<div class="item"><div class="em">${l.typ==='in'?'⬇️':'⬆️'}</div>
   <div class="grow"><div class="nm">${esc(l.party||'—')}${l.why?' · <span style="font-weight:500">'+esc(l.why)+'</span>':''}</div>
   <div class="sub">${dfmt(l.date)} · ${modeName(l.mode)}${dueTag(l)}${l.note?' · '+esc(l.note):''}</div></div>
   <div class="amt ${l.typ==='in'?'in':'out'} num">${l.typ==='in'?'+':'-'}${fmt(l.amt)}</div>
-  <button class="x" onclick="delLed('${l.id}')">🗑️</button></div>`).join('')}
+  <button class="x" onclick="delLed('${l.id}')">🗑️</button></div>`}).join('')}
 function saveLed(){const amt=+document.getElementById('l_amt').value;
   if(!amt||amt<=0)return toast('Enter the amount');
   const party=document.getElementById('l_party').value.trim();
@@ -706,44 +773,101 @@ function drawBars(id,data,vert,budLine){
 /* ================= SETTINGS + BACKUP ================= */
 function openSettings(){
   openSheet(`<div class="xrow"><h3>⚙️ Settings</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <div class="box" style="padding:0">
+    ${setRow('💵','Cash & Budget', fmt(DB.cashOpen)+' · budget '+(DB.budget?fmt(DB.budget):'not set'),'setMoney')}
+    ${setRow('🏦','Banks', (DB.banks.length||'No')+' bank'+(DB.banks.length===1?'':'s'),'setBanks')}
+    ${setRow('🏷️','Categories & budgets', DB.cats.length+' categories','setCats')}
+    ${setRow('⚡','Shortcuts', (DB.tiles||[]).length+' quick buttons','manageTiles')}
+    ${setRow('💾','Backup','Last copy of your data','setBackup')}
+  </div>`)}
+function setRow(em,nm,sub,fn){
+  return`<div class="item" onclick="${fn}()" style="cursor:pointer;padding:12px 10px">
+    <div class="em">${em}</div><div class="grow"><div class="nm">${nm}</div><div class="sub">${esc(sub)}</div></div>
+    <span class="mini">›</span></div>`}
+function setBack(){openSettings()}
+function setMoney(){
+  openSheet(`<div class="xrow"><h3>💵 Cash & Budget</h3><button class="x" onclick="setBack()">‹</button></div>
   <label class="f">CASH OPENING BALANCE (in hand today)</label>
   <input id="s_cash" type="number" inputmode="decimal" value="${DB.cashOpen||''}" placeholder="₹">
   <label class="f">MONTHLY BUDGET (total)</label>
   <input id="s_bud" type="number" inputmode="decimal" value="${DB.budget||''}" placeholder="₹ target for the whole month">
-  <h2 class="sec">🏦 Banks</h2>
-  <div id="s_banks">${DB.banks.map(b=>`<div class="row" style="gap:6px;margin-top:6px" data-bank data-id="${b.id}">
-    <input value="${esc(b.nm)}" data-bnm placeholder="Bank name" style="flex:2">
-    <input type="number" value="${b.open||''}" data-bop placeholder="Opening ₹" style="flex:1.3">
-    <button class="x" onclick="this.parentElement.remove()">✕</button></div>`).join('')}</div>
-  <button class="btn sm ghost" style="margin-top:6px" onclick="addBankRow()">➕ Add bank</button>
-  <h2 class="sec">🏷️ Categories &amp; budgets</h2>
-  <div id="s_cats">${DB.cats.map(c=>`<div class="row" style="gap:6px;margin-top:6px" data-cat data-id="${c.id}">
-    <input value="${esc(c.em)}" data-cem style="flex:0 0 52px;text-align:center">
-    <input value="${esc(c.nm)}" data-cnm style="flex:2">
-    <input type="number" value="${c.bud||''}" data-cbud placeholder="Budget ₹" style="flex:1.2">
-    <button class="x" onclick="this.parentElement.remove()">✕</button></div>`).join('')}</div>
-  <button class="btn sm ghost" style="margin-top:6px" onclick="addCatRow()">➕ Add category</button>
-  <button class="btn" style="margin-top:16px" onclick="saveSettings()">💾 Save settings</button>
-  <h2 class="sec">💾 Backup</h2>
+  <button class="btn" style="margin-top:16px" onclick="saveMoney()">💾 Save</button>`)}
+function saveMoney(){
+  DB.cashOpen=+document.getElementById('s_cash').value||0;
+  DB.budget=+document.getElementById('s_bud').value||0;
+  S();toast('✅ Saved');setBack();go(CUR)}
+function setBanks(){
+  openSheet(`<div class="xrow"><h3>🏦 Banks</h3><button class="x" onclick="setBack()">‹</button></div>
+  <div id="s_banks">${DB.banks.map(b=>bankRow(b)).join('')}</div>
+  <button class="btn sm ghost" style="margin-top:8px" onclick="addBankRow()">➕ Add bank</button>
+  <button class="btn" style="margin-top:16px" onclick="saveBanks()">💾 Save</button>`)}
+function addBankRow(){document.getElementById('s_banks').insertAdjacentHTML('beforeend',bankRow({}))}
+function bankRow(b){return`<div class="row" style="gap:6px;margin-top:6px" data-bank data-id="${b.id||''}">
+  <input value="${esc(b.nm||'')}" data-bnm placeholder="Bank name" style="flex:2">
+  <input type="number" value="${b.open||''}" data-bop placeholder="Opening ₹" style="flex:1.3">
+  <button class="x" onclick="this.parentElement.remove()">✕</button></div>`}
+function saveBanks(){
+  DB.banks=[...document.querySelectorAll('#s_banks [data-bank]')].map(r=>({
+    id:r.dataset.id||uid(),nm:r.querySelector('[data-bnm]').value.trim(),open:+r.querySelector('[data-bop]').value||0}))
+    .filter(b=>b.nm);
+  S();toast('✅ Saved');setBack();go(CUR)}
+function catUsed(id){return DB.exps.filter(e=>e.cat===id).length}
+function setCats(){
+  const unused=DB.cats.filter(c=>!catUsed(c.id)).length;
+  openSheet(`<div class="xrow"><h3>🏷️ Categories</h3><button class="x" onclick="setBack()">‹</button></div>
+  <div class="mini" style="margin-bottom:10px">Tap a category to rename it or set its budget. Jo use nahi hoti, hata dena — list jitni chhoti, kaam utna tez.</div>
+  <div class="cgrid">
+    ${DB.cats.map(c=>catTile(c)).join('')}
+    <div class="ctile add" onclick="catEdit('')"><div class="cem">➕</div><div class="cnm">Add</div></div>
+  </div>
+  ${unused?`<button class="btn sm ghost" style="margin-top:12px;color:var(--red);border-color:var(--red)" onclick="tidyCats()">🧹 Remove ${unused} unused</button>`:''}`)}
+function catTile(c){const n=catUsed(c.id);
+  return`<div class="ctile" onclick="catEdit('${c.id}')">
+    <div class="cem">${c.em||'🏷️'}</div>
+    <div class="cnm">${esc(c.nm)}</div>
+    <div class="cbd">${c.bud?fmt(c.bud):(n?n+' entries':'—')}</div></div>`}
+/* One category at a time, in a small sheet — a grid of 15 editable rows was the bulk
+   he was complaining about; a grid of tiles shows everything at a glance instead. */
+function catEdit(id){
+  const c=id?DB.cats.find(x=>x.id===id):{em:'🏷️',nm:'',bud:0};
+  if(!c)return;
+  const n=id?catUsed(id):0;
+  openSheet(`<div class="xrow"><h3>${id?'Edit category':'New category'}</h3><button class="x" onclick="setCats()">‹</button></div>
+  <div class="row" style="gap:8px">
+    <input id="ce_em" value="${esc(c.em||'🏷️')}" style="flex:0 0 64px;text-align:center;font-size:24px">
+    <input id="ce_nm" value="${esc(c.nm||'')}" placeholder="Category name" class="grow">
+  </div>
+  <label class="f">MONTHLY BUDGET (optional)</label>
+  <input id="ce_bud" type="number" inputmode="numeric" value="${c.bud||''}" placeholder="₹ leave blank if none">
+  ${n?`<div class="mini" style="margin-top:8px">${n} expense${n===1?'':'s'} in this category.</div>`:''}
+  <button class="btn" style="margin-top:16px" onclick="catSave('${id}')">💾 Save</button>
+  ${id?`<button class="btn red" style="margin-top:8px" onclick="catDel('${id}')">🗑️ Delete</button>`:''}`)}
+function catSave(id){
+  const nm=document.getElementById('ce_nm').value.trim();
+  if(!nm)return toast('Name likho');
+  const obj={em:document.getElementById('ce_em').value.trim()||'🏷️',nm,bud:+document.getElementById('ce_bud').value||0};
+  if(id){Object.assign(DB.cats.find(x=>x.id===id),obj)}else{DB.cats.push(Object.assign({id:uid()},obj))}
+  S();toast('✅ Saved');setCats();go(CUR)}
+function catDel(id){
+  const n=catUsed(id);
+  if(n)return toast('Isme '+n+' kharche hain — pehle unki category badlo');
+  if(!confirm('Delete this category?'))return;
+  DB.cats=DB.cats.filter(c=>c.id!==id);
+  DB.tiles=(DB.tiles||[]).filter(t=>t.cat!==id);
+  S();toast('✅ Deleted');setCats()}
+function tidyCats(){
+  const gone=DB.cats.filter(c=>!catUsed(c.id));
+  if(!gone.length)return;
+  if(!confirm('Remove '+gone.length+' categories that have no expenses?\n\n'+gone.map(c=>c.em+' '+c.nm).join('\n')))return;
+  DB.cats=DB.cats.filter(c=>catUsed(c.id));
+  DB.tiles=(DB.tiles||[]).filter(t=>DB.cats.some(c=>c.id===t.cat));
+  S();toast('✅ '+gone.length+' removed');setCats()}
+function setBackup(){
+  openSheet(`<div class="xrow"><h3>💾 Backup</h3><button class="x" onclick="setBack()">‹</button></div>
   <div class="two"><button class="btn ghost" onclick="doBackup()">⬇️ Download backup</button>
   <button class="btn ghost" onclick="document.getElementById('s_file').click()">⬆️ Restore</button></div>
   <input type="file" id="s_file" accept=".json" class="hide" onchange="doRestore(this)">
   <div class="mini" style="margin-top:8px">Data lives only on this device — take a backup at least once a week (voice notes are included).</div>`)}
-function addBankRow(){document.getElementById('s_banks').insertAdjacentHTML('beforeend',
-  `<div class="row" style="gap:6px;margin-top:6px" data-bank data-id=""><input data-bnm placeholder="Bank name" style="flex:2"><input type="number" data-bop placeholder="Opening ₹" style="flex:1.3"><button class="x" onclick="this.parentElement.remove()">✕</button></div>`)}
-function addCatRow(){document.getElementById('s_cats').insertAdjacentHTML('beforeend',
-  `<div class="row" style="gap:6px;margin-top:6px" data-cat data-id=""><input data-cem value="🏷️" style="flex:0 0 52px;text-align:center"><input data-cnm placeholder="Name" style="flex:2"><input type="number" data-cbud placeholder="Budget ₹" style="flex:1.2"><button class="x" onclick="this.parentElement.remove()">✕</button></div>`)}
-function saveSettings(){
-  DB.cashOpen=+document.getElementById('s_cash').value||0;
-  DB.budget=+document.getElementById('s_bud').value||0;
-  DB.banks=[...document.querySelectorAll('#s_banks [data-bank]')].map(r=>({
-    id:r.dataset.id||uid(),nm:r.querySelector('[data-bnm]').value.trim(),open:+r.querySelector('[data-bop]').value||0}))
-    .filter(b=>b.nm);
-  DB.cats=[...document.querySelectorAll('#s_cats [data-cat]')].map(r=>({
-    id:r.dataset.id||uid(),em:r.querySelector('[data-cem]').value.trim()||'🏷️',
-    nm:r.querySelector('[data-cnm]').value.trim(),bud:+r.querySelector('[data-cbud]').value||0}))
-    .filter(c=>c.nm);
-  S();closeSheet();toast('✅ Settings saved');go(CUR)}
 async function doBackup(){
   const auds={};for(const e of DB.exps){if(e.aud){const b=await audGet(e.id);
     if(b)auds[e.id]=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(b)})}}
