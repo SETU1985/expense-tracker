@@ -1,4 +1,4 @@
-const C='expense-v6';
+const C='expense-v8';
 self.addEventListener('install',e=>{self.skipWaiting();
   e.waitUntil(caches.open(C).then(c=>c.addAll(['./','./index.html','./manifest.json','./icon-192.png','./icon-512.png']).catch(()=>{})));});
 self.addEventListener('activate',e=>{e.waitUntil(

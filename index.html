@@ -105,7 +105,7 @@ audio{display:none}
 <body>
 <header class="app">
   <div class="logo">₹</div>
-  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v6</span></h1>
+  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v8</span></h1>
   <button class="hbtn" onclick="openSettings()">⚙️</button>
 </header>
 <main id="main"></main>
@@ -137,10 +137,36 @@ let DB=JSON.parse(localStorage.getItem(LS)||'null')||{
     {id:'c5',nm:'Health',em:'💊',bud:0},{id:'c6',nm:'Mobile/Net',em:'📱',bud:0},
     {id:'c7',nm:'Family',em:'👨‍👩‍👦',bud:0},{id:'c8',nm:'Entertainment',em:'🎬',bud:0},
     {id:'c9',nm:'Business',em:'🏪',bud:0},{id:'c10',nm:'Other',em:'📦',bud:0}],
-  exps:[],   // {id,date,amt,cat,mode,note,aud}  mode:'cash'|bankId|cardId
-  led:[],    // {id,date,typ:'in'|'out',party,amt,mode,note}  mode:'cash'|bankId
-  pays:[]    // card payments {id,date,cardId,from,amt}  from:'cash'|bankId
+  exps:[],   // {id,date,amt,cat,mode,note,aud,who}  mode:'cash'|bankId|cardId · who:'me'|'shop'
+  led:[],    // {id,date,typ:'in'|'out',party,amt,mode,note,why,due,who}
+  pays:[],   // card payments {id,date,cardId,from,amt}  from:'cash'|bankId
+  tiles:[]   // one-tap shortcuts {id,nm,em,cat,who,note}
 };
+/* His real categories, in his words. Added by NAME so an existing install gains the
+   missing ones without duplicating anything he already has or renamed. */
+const WANT_CATS=[
+  {nm:'School Fee',em:'🎓'},{nm:'Ghar ka Saman',em:'🛒'},{nm:'Bills & Recharge',em:'💡'},
+  {nm:'Cab / Travel',em:'🚕'},{nm:'EMI / Loan',em:'🏦'},{nm:'Khana-Peena',em:'🍽️'},
+  {nm:'Health',em:'💊'},{nm:'Family',em:'👨‍👩‍👦'},{nm:'Shopping',em:'🛍️'},{nm:'Other',em:'📦'}];
+const WANT_TILES=[
+  {nm:'Zepto',em:'🛒',cat:'Ghar ka Saman'},{nm:'Blinkit',em:'🛒',cat:'Ghar ka Saman'},
+  {nm:'JioMart',em:'🛒',cat:'Ghar ka Saman'},{nm:'Flipkart',em:'📦',cat:'Shopping'},
+  {nm:'Uber',em:'🚕',cat:'Cab / Travel'},{nm:'Rapido',em:'🛵',cat:'Cab / Travel'},
+  {nm:'School fee',em:'🎓',cat:'School Fee'},{nm:'Electricity',em:'💡',cat:'Bills & Recharge'},
+  {nm:'Phone bill',em:'📱',cat:'Bills & Recharge'},{nm:'Cylinder',em:'🔥',cat:'Bills & Recharge'},
+  {nm:'Nasta (shop)',em:'☕',cat:'Khana-Peena',who:'shop'},
+  {nm:'Rapido (shop)',em:'🛵',cat:'Cab / Travel',who:'shop'}];
+function migrate(){
+  DB.cats=DB.cats||[]; DB.tiles=DB.tiles||[]; DB.led=DB.led||[]; DB.exps=DB.exps||[];
+  const have=n=>DB.cats.some(c=>c.nm.toLowerCase()===n.toLowerCase());
+  WANT_CATS.forEach(c=>{ if(!have(c.nm))DB.cats.push({id:uid(),nm:c.nm,em:c.em,bud:0}); });
+  if(!DB.tiles.length){
+    WANT_TILES.forEach(t=>{ const c=DB.cats.find(x=>x.nm===t.cat);
+      DB.tiles.push({id:uid(),nm:t.nm,em:t.em,cat:c?c.id:'',who:t.who||'me'}); });
+  }
+  DB.exps.forEach(e=>{ if(!e.who)e.who='me'; });
+  S();
+}
 function S(){localStorage.setItem(LS,JSON.stringify(DB))}
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const fmt=n=>'₹'+(Math.round(n)||0).toLocaleString('en-IN');
@@ -214,9 +240,24 @@ function renderHome(){
     <button class="btn ghost" onclick="go('rep')">📊 Reports &amp; charts</button>
   </div>
   ${cardTot?`<div class="box row between"><span>💳 Total card outstanding</span><b class="amt out num">${fmt(cardTot)}</b></div>`:''}
+  ${lenDenHTML()}
   <h2 class="sec">Recent entries</h2>
   <div class="box">${lastEntriesHTML(8)}</div>`;
 }
+/* Lena-den at a glance — the number he needs before he answers the phone. */
+function lenDenHTML(){
+  const m=partyBalances();
+  let get=0,give=0; Object.values(m).forEach(v=>{ if(v>0)get+=v; else give+=-v; });
+  const od=DB.led.filter(l=>l.due&&new Date(l.due+'T00:00')<new Date(today()+'T00:00'));
+  if(!get&&!give)return '';
+  return `<div class="box" onclick="go('led')" style="cursor:pointer">
+    <div class="row between"><b>🤝 Lena-Den</b><span class="mini">tap for details ›</span></div>
+    <div class="row between" style="margin-top:8px">
+      <div><div class="mini">Aapko milna hai</div><b class="amt in num">${fmt(get)}</b></div>
+      <div class="right"><div class="mini">Aapko dena hai</div><b class="amt out num">${fmt(give)}</b></div>
+    </div>
+    ${od.length?`<div class="mini" style="margin-top:8px;color:var(--red)">⏰ ${od.length} entry ki return date nikal chuki hai</div>`:''}
+  </div>`}
 function lastEntriesHTML(n){
   const all=[...DB.exps.map(e=>({...e,_k:'e'})),...DB.led.map(l=>({...l,_k:'l'})),...DB.pays.map(p=>({...p,_k:'p'}))]
    .sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id)).slice(0,n);
@@ -235,12 +276,46 @@ async function playAud(id){const b=await audGet(id);if(!b)return toast('Recordin
   const u=URL.createObjectURL(b);const a=new Audio(u);a.onended=()=>URL.revokeObjectURL(u);a.play()}
 
 /* ================= EXPENSE (entry line on TOP, list below) ================= */
-let F={cat:null,mode:'cash',aud:null};
+let F={cat:null,mode:'cash',aud:null,who:'me'};
+function tileChips(){ if(!(DB.tiles||[]).length)return '';
+  return (DB.tiles||[]).map(t=>`<button class="chip" onclick="tapTile('${t.id}')">${t.em} ${esc(t.nm)}</button>`).join('')
+    +`<button class="chip" onclick="manageTiles()">✏️</button>`}
+function tapTile(id){const t=(DB.tiles||[]).find(x=>x.id===id);if(!t)return;
+  F.cat=t.cat||F.cat; F.who=t.who||'me';
+  const n=document.getElementById('e_note'); if(n&&!n.value)n.value=t.nm;
+  renderExpChips();
+  const a=document.getElementById('e_amt'); if(a){a.focus();}
+  toast(t.em+' '+t.nm+' — ab amount likho')}
+function manageTiles(){
+  openSheet(`<div class="xrow"><h3>✏️ Shortcuts</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <div class="mini" style="margin-bottom:8px">Jo kharche baar-baar hote hain unke shortcut. Tap karo, category apne aap set ho jayegi.</div>
+  <div id="tl_rows">${(DB.tiles||[]).map(t=>tileRow(t)).join('')}</div>
+  <button class="btn sm ghost" style="margin-top:8px" onclick="addTileRow()">➕ Add shortcut</button>
+  <button class="btn" style="margin-top:14px" onclick="saveTiles()">💾 Save</button>`)}
+function tileRow(t){return`<div class="row" style="gap:6px;margin-top:6px" data-tile data-id="${t.id||''}">
+  <input value="${esc(t.em||'🏷️')}" data-tem style="flex:0 0 52px;text-align:center">
+  <input value="${esc(t.nm||'')}" data-tnm placeholder="Name" style="flex:2">
+  <select data-tcat style="flex:1.6">${DB.cats.map(c=>`<option value="${c.id}" ${t.cat===c.id?'selected':''}>${esc(c.nm)}</option>`).join('')}</select>
+  <select data-twho style="flex:0 0 96px"><option value="me" ${t.who!=='shop'?'selected':''}>Personal</option><option value="shop" ${t.who==='shop'?'selected':''}>Shop</option></select>
+  <button class="x" onclick="this.parentElement.remove()">✕</button></div>`}
+function addTileRow(){document.getElementById('tl_rows').insertAdjacentHTML('beforeend',tileRow({}))}
+function saveTiles(){
+  DB.tiles=[...document.querySelectorAll('#tl_rows [data-tile]')].map(r=>({
+    id:r.dataset.id||uid(), em:r.querySelector('[data-tem]').value.trim()||'🏷️',
+    nm:r.querySelector('[data-tnm]').value.trim(), cat:r.querySelector('[data-tcat]').value,
+    who:r.querySelector('[data-twho]').value })).filter(t=>t.nm);
+  S();closeSheet();toast('✅ Shortcuts saved');renderExp()}
 function renderExp(){
   const mk=mkey();
   M().innerHTML=`
   <div class="box" id="expForm">
+    <div class="chips" style="margin-bottom:10px" id="e_tiles">${tileChips()}</div>
     <input class="bigamt num" id="e_amt" type="number" inputmode="decimal" placeholder="₹ Amount spent">
+    <label class="f">KISKE LIYE?</label>
+    <div class="chips" id="e_who">
+      <button class="chip ${F.who!=='shop'?'on':''}" onclick="F.who='me';renderExpChips()">🏠 Personal</button>
+      <button class="chip gold ${F.who==='shop'?'on':''}" onclick="F.who='shop';renderExpChips()">🏪 Shop — PARAMPARA</button>
+    </div>
     <label class="f">CATEGORY</label>
     <div class="chips" id="e_cats">${DB.cats.map(c=>`<button class="chip ${F.cat===c.id?'on':''}" onclick="F.cat='${c.id}';renderExpChips()">${c.em} ${esc(c.nm)}</button>`).join('')}</div>
     <label class="f">PAID FROM</label>
@@ -265,13 +340,16 @@ function modeChips(){let h=`<button class="chip ${F.mode==='cash'?'on':''}" oncl
   DB.cards.forEach(c=>h+=`<button class="chip gold ${F.mode===c.id?'on':''}" onclick="F.mode='${c.id}';renderExpChips()">💳 ${esc(c.nm)}</button>`);
   return h}
 function renderExpChips(){document.getElementById('e_cats').innerHTML=DB.cats.map(c=>`<button class="chip ${F.cat===c.id?'on':''}" onclick="F.cat='${c.id}';renderExpChips()">${c.em} ${esc(c.nm)}</button>`).join('');
-  document.getElementById('e_modes').innerHTML=modeChips()}
+  document.getElementById('e_modes').innerHTML=modeChips();
+  const w=document.getElementById('e_who'); if(w)w.innerHTML=
+    `<button class="chip ${F.who!=='shop'?'on':''}" onclick="F.who='me';renderExpChips()">🏠 Personal</button>
+     <button class="chip gold ${F.who==='shop'?'on':''}" onclick="F.who='shop';renderExpChips()">🏪 Shop — PARAMPARA</button>`}
 function expListHTML(mk){
   const L=DB.exps.filter(e=>mkey(e.date)===mk).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
   if(!L.length)return`<div class="empty">No expenses recorded this month.</div>`;
   return L.map(e=>{const c=DB.cats.find(k=>k.id===e.cat)||{em:'📦',nm:'Other'};
    return`<div class="item"><div class="em">${c.em}</div><div class="grow"><div class="nm">${esc(c.nm)}${e.note?' · <span style="font-weight:500">'+esc(e.note)+'</span>':''}</div>
-   <div class="sub">${dfmt(e.date)} · ${modeName(e.mode)}</div></div>
+   <div class="sub">${dfmt(e.date)} · ${modeName(e.mode)}${e.who==='shop'?' · <b style="color:var(--gold)">🏪 Shop</b>':''}</div></div>
    ${e.aud?`<button class="mic" style="width:34px;height:34px;font-size:14px" onclick="playAud('${e.id}')">▶️</button>`:''}
    <div class="amt out num">-${fmt(e.amt)}</div>
    <button class="x" onclick="delExp('${e.id}')">🗑️</button></div>`}).join('')}
@@ -280,9 +358,10 @@ function saveExp(){
   if(!amt||amt<=0)return toast('Enter the amount');
   if(!F.cat)return toast('Select a category');
   const id=uid();
-  DB.exps.push({id,date:document.getElementById('e_date').value||today(),amt,cat:F.cat,mode:F.mode,note:document.getElementById('e_note').value.trim(),aud:!!F.aud});
+  DB.exps.push({id,date:document.getElementById('e_date').value||today(),amt,cat:F.cat,mode:F.mode,
+    note:document.getElementById('e_note').value.trim(),aud:!!F.aud,who:F.who||'me'});
   if(F.aud)audPut(id,F.aud);
-  S();F={cat:null,mode:F.mode,aud:null};
+  S();F={cat:null,mode:F.mode,aud:null,who:'me'};
   toast('✅ Expense saved — '+fmt(amt));renderExp()}
 function delExp(id){if(!confirm('Delete this expense?'))return;
   DB.exps=DB.exps.filter(e=>e.id!==id);audDel(id);S();renderExp()}
@@ -342,7 +421,11 @@ async function toggleRec(){
 function dropRec(){F.aud=null;document.getElementById('e_hasaud').classList.add('hide')}
 
 /* ================= LEN-DEN (cash in/out + party ledger) ================= */
-let L={typ:'in',mode:'cash'};
+let L={typ:'in',mode:'cash',why:'',due:''};
+const WHYS_IN=['Udhaar liya','Wapsi mili','Business ka','Gift','Salary/Income'];
+const WHYS_OUT=['Udhaar diya','Wapsi ki','Business ka','Gift','Madad ki'];
+function whyChips(){const list=L.typ==='in'?WHYS_IN:WHYS_OUT;
+  return list.map(w=>`<button class="chip ${L.why===w?'on':''}" onclick="L.why=(L.why==='${w}'?'':'${w}');renderLed()">${w}</button>`).join('')}
 function renderLed(){
   M().innerHTML=`
   <div class="box">
@@ -361,19 +444,36 @@ function renderLed(){
       <button class="chip gold ${L.mode==='open'?'on':''}" onclick="L.mode='open';renderLed()">📖 Opening balance</button>
     </div>
     ${L.mode==='open'?`<div class="mini" style="margin-top:6px">📖 <b>Opening balance entry</b> — goes only into the party ledger. Cash/Bank balances will NOT change (that money moved before you started tracking). "OUT" = you had given (they owe you) · "IN" = you had taken (you owe them).</div>`:''}
+    <label class="f">KISLIYE? (reason)</label>
+    <div class="chips" id="l_whys">${whyChips()}</div>
+    <input id="l_why" value="${esc(L.why||'')}" placeholder="Or type the reason in your own words" style="margin-top:8px">
+    <label class="f">RETURN BY (optional — you'll get a reminder)</label>
+    <input id="l_due" type="date" value="${esc(L.due||'')}">
     <label class="f">NOTE (optional)</label>
-    <input id="l_note" placeholder="Reason — loan / repayment / gift...">
+    <input id="l_note" placeholder="Anything else worth remembering">
     <div class="row" style="margin-top:12px;gap:8px">
       <input id="l_date" type="date" value="${today()}" style="max-width:150px">
       <button class="btn grow ${L.typ==='out'?'red':''}" onclick="saveLed()">💾 Save ${L.typ==='in'?'IN':'OUT'}</button>
     </div>
     <div class="mini" style="margin-top:8px">⚠️ This is NOT an expense — only money in/out of cash or bank. Balances update directly.</div>
   </div>
+  ${dueSoonHTML()}
   <h2 class="sec">Debtors &amp; Creditors (party balances)</h2>
   <div class="box">${partyHTML()}</div>
   <h2 class="sec">All entries</h2>
   <div class="box">${ledListHTML()}</div>`;
 }
+/* A return date he set himself, surfaced on the day it matters. */
+function dueSoonHTML(){
+  const T=new Date(today()+'T00:00');
+  const list=DB.led.filter(l=>l.due).map(l=>({l,d:Math.round((new Date(l.due+'T00:00')-T)/86400000)}))
+    .filter(x=>x.d<=7).sort((a,b)=>a.d-b.d);
+  if(!list.length)return '';
+  return `<h2 class="sec">⏰ Yaad dilana hai</h2><div class="box">${list.map(x=>
+    `<div class="item"><div class="em">${x.d<0?'🔴':'🟡'}</div>
+     <div class="grow"><div class="nm">${esc(x.l.party)}${x.l.why?' · <span style="font-weight:500">'+esc(x.l.why)+'</span>':''}</div>
+     <div class="sub">${x.d<0?(-x.d)+' din late':x.d===0?'aaj':x.d+' din baaki'} · ${x.l.typ==='out'?'aapko milna hai':'aapko dena hai'}</div></div>
+     <div class="amt ${x.l.typ==='out'?'in':'out'} num">${fmt(x.l.amt)}</div></div>`).join('')}</div>`}
 function partyBalances(){const m={};DB.led.forEach(l=>{if(!l.party)return;
   m[l.party]=(m[l.party]||0)+(l.typ==='out'?+l.amt:-l.amt)});return m}
 function partyHTML(){const m=partyBalances();const ks=Object.keys(m).filter(p=>Math.round(m[p])!==0);
@@ -382,23 +482,47 @@ function partyHTML(){const m=partyBalances();const ks=Object.keys(m).filter(p=>M
    return`<div class="item" onclick="partyView('${esc(p).replace(/'/g,"\\'")}')" style="cursor:pointer"><div class="em">${v>0?'🟢':'🔴'}</div>
    <div class="grow"><div class="nm">${esc(p)}</div><div class="sub">${v>0?'To receive — Debtor':'To pay — Creditor'}</div></div>
    <span class="tag ${v>0?'get':'give'}">${fmt(Math.abs(v))}</span></div>`}).join('')}
+function dueTag(l){ if(!l.due)return '';
+  const d=Math.round((new Date(l.due+'T00:00')-new Date(today()+'T00:00'))/86400000);
+  if(d<0)return ` · <b style="color:var(--red)">${-d}d late</b>`;
+  if(d===0)return ` · <b style="color:var(--red)">due today</b>`;
+  if(d<=7)return ` · <b style="color:var(--gold)">due in ${d}d</b>`;
+  return ` · due ${dfmt(l.due)}` }
 function partyView(p){const rows=DB.led.filter(l=>l.party===p).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
   const bal=partyBalances()[p]||0;
   openSheet(`<div class="xrow"><h3>🤝 ${esc(p)}</h3><button class="x" onclick="closeSheet()">✕</button></div>
   <div class="box row between"><span>Net balance</span><span class="tag ${bal>0?'get':'give'}">${bal>0?'To receive ':'To pay '}${fmt(Math.abs(bal))}</span></div>
-  <div class="box">${rows.map(l=>rowHTML(l.typ==='in'?'⬇️':'⬆️',(l.typ==='in'?'Received':'Given')+(l.note?' · '+esc(l.note):''),dfmt(l.date)+' · '+modeName(l.mode),(l.typ==='in'?'+':'-')+fmt(l.amt),l.typ==='in'?'in':'out')).join('')}</div>`)}
+  <div class="box">${rows.map(l=>rowHTML(l.typ==='in'?'⬇️':'⬆️',
+    (l.why||(l.typ==='in'?'Received':'Given'))+(l.note?' · <span style="font-weight:500">'+esc(l.note)+'</span>':''),
+    dfmt(l.date)+' · '+modeName(l.mode)+dueTag(l),
+    (l.typ==='in'?'+':'-')+fmt(l.amt),l.typ==='in'?'in':'out')).join('')}</div>
+  <button class="btn ghost" style="margin-top:10px" onclick="waParty('${esc(p).replace(/'/g,"\\'")}')">💬 Send this account on WhatsApp</button>`)}
+/* The account in plain words, so a disagreement is settled by showing it, not arguing. */
+function waParty(p){
+  const rows=DB.led.filter(l=>l.party===p).sort((a,b)=>(a.date+a.id).localeCompare(b.date+b.id));
+  const bal=partyBalances()[p]||0;
+  let t='*'+p+'* — hisaab\n\n';
+  rows.forEach(l=>{ t+=dfmt(l.date)+'  '+(l.typ==='in'?'liya':'diya')+'  '+fmt(l.amt)
+    +(l.why?'  ('+l.why+')':'')+'\n'; });
+  t+='\n'+(bal>0?'Aapse lena hai: ':bal<0?'Aapko dena hai: ':'Hisaab barabar: ')+fmt(Math.abs(bal));
+  window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank');}
 function ledListHTML(){const L2=[...DB.led].sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id)).slice(0,40);
   if(!L2.length)return`<div class="empty">No ledger entries yet.</div>`;
   return L2.map(l=>`<div class="item"><div class="em">${l.typ==='in'?'⬇️':'⬆️'}</div>
-  <div class="grow"><div class="nm">${esc(l.party||'—')}${l.note?' · <span style="font-weight:500">'+esc(l.note)+'</span>':''}</div>
-  <div class="sub">${dfmt(l.date)} · ${modeName(l.mode)}</div></div>
+  <div class="grow"><div class="nm">${esc(l.party||'—')}${l.why?' · <span style="font-weight:500">'+esc(l.why)+'</span>':''}</div>
+  <div class="sub">${dfmt(l.date)} · ${modeName(l.mode)}${dueTag(l)}${l.note?' · '+esc(l.note):''}</div></div>
   <div class="amt ${l.typ==='in'?'in':'out'} num">${l.typ==='in'?'+':'-'}${fmt(l.amt)}</div>
   <button class="x" onclick="delLed('${l.id}')">🗑️</button></div>`).join('')}
 function saveLed(){const amt=+document.getElementById('l_amt').value;
   if(!amt||amt<=0)return toast('Enter the amount');
+  const party=document.getElementById('l_party').value.trim();
+  if(!party)return toast('Kiska naam? Party likhna zaroori hai');
+  const why=(document.getElementById('l_why').value.trim())||L.why||'';
   DB.led.push({id:uid(),date:document.getElementById('l_date').value||today(),typ:L.typ,
-    party:document.getElementById('l_party').value.trim(),amt,mode:L.mode,note:document.getElementById('l_note').value.trim()});
-  S();toast('✅ '+(L.typ==='in'?'IN':'OUT')+' saved — '+fmt(amt));renderLed()}
+    party,amt,mode:L.mode,why,due:document.getElementById('l_due').value||'',
+    note:document.getElementById('l_note').value.trim()});
+  S();L.why='';L.due='';
+  toast('✅ '+(L.typ==='in'?'IN':'OUT')+' saved — '+fmt(amt));renderLed()}
 function delLed(id){if(!confirm('Delete this entry?'))return;DB.led=DB.led.filter(l=>l.id!==id);S();renderLed()}
 
 /* ================= CARDS ================= */
@@ -519,6 +643,7 @@ function renderRep(){
     <div class="row" style="margin-top:10px;gap:6px">
       <span class="pill">💵 Cash ${fmt(bm.cash)}</span><span class="pill">🏦 Bank ${fmt(bm.bank)}</span><span class="pill">💳 Card ${fmt(bm.card)}</span>
     </div>
+    ${shopSplit(mk)}
   </div>
   <h2 class="sec">Category-wise spend</h2>
   <div class="box"><canvas id="cv1" height="0"></canvas>
@@ -535,6 +660,14 @@ function renderRep(){
   drawBars('cv1',cats.map(c=>({l:c.em,v:c.v})),false);
   drawBars('cv2',tr.map(t=>({l:MN[+t.k.slice(5,7)-1],v:t.v,hot:t.k===mk})),true,bud);
 }
+function shopSplit(mk){
+  const L=DB.exps.filter(e=>mkey(e.date)===mk);
+  const shop=L.filter(e=>e.who==='shop').reduce((s,e)=>s+ +e.amt,0);
+  const me=L.filter(e=>e.who!=='shop').reduce((s,e)=>s+ +e.amt,0);
+  if(!shop)return '';
+  return `<div class="row between" style="margin-top:10px;border-top:1px dashed var(--line);padding-top:8px">
+    <span>🏠 Personal <b class="num">${fmt(me)}</b></span>
+    <span>🏪 Shop <b class="num">${fmt(shop)}</b></span></div>`}
 function insightsHTML(mk,sp,bud,cats,tr){
   const out=[];
   if(!sp)return`<div class="insight">Add entries for this month and the analysis will appear here.</div>`;
@@ -630,6 +763,7 @@ function openSheet(html){document.getElementById('sheetIn').innerHTML=html;
   document.getElementById('sheet').classList.add('on')}
 function closeSheet(){document.getElementById('sheet').classList.remove('on')}
 document.getElementById('sheet').addEventListener('click',e=>{if(e.target.id==='sheet')closeSheet()});
+migrate();          // runs here, not at declaration time — every helper it needs exists by now
 if(!DB.banks.length&&!DB.exps.length&&!DB.led.length&&!+DB.cashOpen){
   go('home');setTimeout(()=>{openSettings();toast('👋 Set your opening balances first')},400);
 }else go('home');
