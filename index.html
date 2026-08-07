@@ -103,6 +103,8 @@ audio{display:none}
 .ctile{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 6px;text-align:center;box-shadow:var(--sh);cursor:pointer}
 .ctile:active{border-color:var(--gold);transform:scale(.97)}
 .ctile.add{border-style:dashed;background:transparent;box-shadow:none}
+.ctile.sel{border-color:var(--green);border-width:2px;background:#EEF3EE}
+.ctile .chint{font-size:9.5px;color:var(--mut);margin-top:2px}
 .cem{font-size:22px;line-height:1.2}
 .cnm{font-size:12px;font-weight:700;margin-top:3px;line-height:1.25;word-break:break-word}
 .cbd{font-size:10.5px;color:var(--mut);margin-top:2px}
@@ -112,7 +114,7 @@ audio{display:none}
 <body>
 <header class="app">
   <div class="logo">₹</div>
-  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v14</span></h1>
+  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v15</span></h1>
   <button class="hbtn" onclick="openSettings()">⚙️</button>
 </header>
 <main id="main"></main>
@@ -138,12 +140,8 @@ if('serviceWorker' in navigator){
 const LS='pb_khata_v1';
 let DB=JSON.parse(localStorage.getItem(LS)||'null')||{
   cashOpen:0, banks:[], cards:[], budget:0,
-  cats:[
-    {id:'c1',nm:'Khana-Peena',em:'🍽️',bud:0},{id:'c2',nm:'Ghar',em:'🏠',bud:0},
-    {id:'c3',nm:'Fuel/Travel',em:'⛽',bud:0},{id:'c4',nm:'Shopping',em:'🛍️',bud:0},
-    {id:'c5',nm:'Health',em:'💊',bud:0},{id:'c6',nm:'Mobile/Net',em:'📱',bud:0},
-    {id:'c7',nm:'Family',em:'👨‍👩‍👦',bud:0},{id:'c8',nm:'Entertainment',em:'🎬',bud:0},
-    {id:'c9',nm:'Business',em:'🏪',bud:0},{id:'c10',nm:'Other',em:'📦',bud:0}],
+  cats:[],
+
   exps:[],   // {id,date,amt,cat,mode,note,aud,who}  mode:'cash'|bankId|cardId · who:'me'|'shop'
   led:[],    // {id,date,typ:'in'|'out',party,amt,mode,note,why,due,who}
   pays:[],   // card payments {id,date,cardId,from,amt}  from:'cash'|bankId
@@ -152,17 +150,35 @@ let DB=JSON.parse(localStorage.getItem(LS)||'null')||{
 /* His real categories, in his words. Added by NAME so an existing install gains the
    missing ones without duplicating anything he already has or renamed. */
 const WANT_CATS=[
-  {nm:'School Fee',em:'🎓'},{nm:'Ghar ka Saman',em:'🛒'},{nm:'Bills & Recharge',em:'💡'},
-  {nm:'Cab / Travel',em:'🚕'},{nm:'EMI / Loan',em:'🏦'},{nm:'Khana-Peena',em:'🍽️'},
-  {nm:'Health',em:'💊'},{nm:'Family',em:'👨‍👩‍👦'},{nm:'Shopping',em:'🛍️'},{nm:'Other',em:'📦'}];
+  {nm:'Groceries',em:'🛒'},{nm:'Food & Dining',em:'🍽️'},{nm:'Utilities & Bills',em:'💡'},
+  {nm:'Transport',em:'🚕'},{nm:'School Fees',em:'🎓'},{nm:'EMI & Loans',em:'🏦'},
+  {nm:'Household',em:'🏠'},{nm:'Health',em:'💊'},{nm:'Family',em:'👨‍👩‍👦'},
+  {nm:'Shopping',em:'🛍️'},{nm:'Shop — PARAMPARA',em:'🏪'},{nm:'Other',em:'📦'}];
+/* Old name → new name. Renaming keeps the id, so nothing already recorded is orphaned. */
+const RENAME={'ghar ka saman':'Groceries','khana-peena':'Food & Dining','bills & recharge':'Utilities & Bills',
+  'mobile/net':'Utilities & Bills','cab / travel':'Transport','fuel/travel':'Transport',
+  'school fee':'School Fees','emi / loan':'EMI & Loans','ghar':'Household','business':'Shop — PARAMPARA',
+  'entertainment':'Food & Dining'};
 const WANT_TILES=[
-  {nm:'Ghar ka saman',em:'🛒',cat:'Ghar ka Saman'},
-  {nm:'Cab',em:'🚕',cat:'Cab / Travel'},
-  {nm:'School fee',em:'🎓',cat:'School Fee'},
-  {nm:'Bill / Recharge',em:'💡',cat:'Bills & Recharge'},
-  {nm:'Shop kharcha',em:'🏪',cat:'Other',who:'shop'}];
+  {nm:'Groceries',em:'🛒',cat:'Groceries'},
+  {nm:'Transport',em:'🚕',cat:'Transport'},
+  {nm:'School fees',em:'🎓',cat:'School Fees'},
+  {nm:'Bill payment',em:'💡',cat:'Utilities & Bills'},
+  {nm:'Shop expense',em:'🏪',cat:'Shop — PARAMPARA',who:'shop'}];
 function migrate(){
   DB.cats=DB.cats||[]; DB.tiles=DB.tiles||[]; DB.led=DB.led||[]; DB.exps=DB.exps||[];
+  // rename first, so the "do I already have it" check sees the new names
+  DB.cats.forEach(c=>{ const nn=RENAME[String(c.nm).toLowerCase()];
+    if(nn){ c.nm=nn; const w=WANT_CATS.find(x=>x.nm===nn); if(w)c.em=w.em; } });
+  // a rename can create twins — fold the empty one into the one that has entries
+  const seen={};
+  DB.cats=DB.cats.filter(c=>{ const k=c.nm.toLowerCase();
+    if(!seen[k]){ seen[k]=c; return true; }
+    const keep=seen[k];
+    DB.exps.forEach(e=>{ if(e.cat===c.id)e.cat=keep.id; });
+    (DB.tiles||[]).forEach(t=>{ if(t.cat===c.id)t.cat=keep.id; });
+    if(!keep.bud&&c.bud)keep.bud=c.bud;
+    return false; });
   const have=n=>DB.cats.some(c=>c.nm.toLowerCase()===n.toLowerCase());
   WANT_CATS.forEach(c=>{ if(!have(c.nm))DB.cats.push({id:uid(),nm:c.nm,em:c.em,bud:0}); });
   if(!DB.tiles.length){
@@ -243,14 +259,7 @@ function renderHome(){
     <div class="row between mini" style="margin-top:5px"><span>Budget ${fmt(bud)}</span><span>${sp>bud?'⚠️ '+fmt(sp-bud)+' over budget':fmt(bud-sp)+' remaining'}</span></div>`
     :`<div class="mini" style="margin-top:6px">No budget set yet — set it in ⚙️ Settings</div>`}
   </div>
-  <div class="two" style="margin-bottom:8px">
-    <button class="btn" onclick="go('exp')">🧾 Add expense</button>
-    <button class="btn ghost" onclick="go('led')">🤝 Debtors / Creditors</button>
-  </div>
-  <div class="two" style="margin-bottom:10px">
-    <button class="btn ghost" onclick="go('card')">💳 Credit cards &amp; EMI</button>
-    <button class="btn ghost" onclick="go('rep')">📊 Reports &amp; charts</button>
-  </div>
+
   ${cardTot?`<div class="box row between"><span>💳 Total card outstanding</span><b class="amt out num">${fmt(cardTot)}</b></div>`:''}
   ${aheadHTML()}
   ${lenDenHTML()}
@@ -361,11 +370,11 @@ async function playAud(id){const b=await audGet(id);if(!b)return toast('Recordin
 /* ================= EXPENSE (entry line on TOP, list below) ================= */
 let F={cat:null,mode:'cash',aud:null,who:'me'};
 function tileChips(){ if(!(DB.tiles||[]).length)return '';
-  return (DB.tiles||[]).map(t=>`<button class="chip" onclick="tapTile('${t.id}')">${t.em} ${esc(t.nm)}</button>`).join('')
-    +`<button class="chip" onclick="manageTiles()">✏️</button>`}
+  return (DB.tiles||[]).map(t=>`<button class="chip ${F.tile===t.id?'on':''}" onclick="tapTile('${t.id}')">${t.em} ${esc(t.nm)}</button>`).join('')
+    +`<button class="chip" onclick="manageTiles()">✏️ Edit</button>`}
 function tapTile(id){const t=(DB.tiles||[]).find(x=>x.id===id);if(!t)return;
   const a0=document.getElementById('e_amt'); const typed=a0?a0.value:'';
-  F.cat=t.cat||F.cat; F.who=t.who||'me';
+  F.cat=t.cat||F.cat; F.who=t.who||'me'; F.tile=t.id;
   renderExp();
   const n=document.getElementById('e_note'); if(n&&!n.value)n.value=t.nm;
   const a=document.getElementById('e_amt');
@@ -382,7 +391,8 @@ function tileTile(t){const c=DB.cats.find(x=>x.id===t.cat);
   return`<div class="ctile" onclick="tileEdit('${t.id}')">
     <div class="cem">${t.em||'🏷️'}</div>
     <div class="cnm">${esc(t.nm)}</div>
-    <div class="cbd">${+t.rep?('📅 '+t.rep+' tarikh'):(t.who==='shop'?'🏪 Shop':(c?esc(c.nm):'—'))}</div></div>`}
+    <div class="cbd">${+t.rep?('📅 day '+t.rep):(t.who==='shop'?'🏪 Shop':(c?esc(c.nm):'—'))}</div>
+    <div class="chint">tap to edit</div></div>`}
 function tileEdit(id){
   const t=id?(DB.tiles||[]).find(x=>x.id===id):{em:'🏷️',nm:'',cat:(DB.cats[0]||{}).id,who:'me'};
   if(!t)return;
@@ -411,7 +421,7 @@ function tileSave(id){
     rep:+document.getElementById('te_rep').value||0, amt:+document.getElementById('te_amt').value||0};
   DB.tiles=DB.tiles||[];
   if(id){Object.assign(DB.tiles.find(x=>x.id===id),obj)}else{DB.tiles.push(Object.assign({id:uid()},obj))}
-  S();toast('✅ Saved');manageTiles()}
+  S();closeSheet();toast('✅ Saved');go(CUR)}
 function tileDel(id){
   if(!confirm('Delete this shortcut?'))return;
   DB.tiles=(DB.tiles||[]).filter(t=>t.id!==id);S();toast('✅ Deleted');manageTiles()}
@@ -451,8 +461,11 @@ function pickCat(){
   const amt=document.getElementById('e_amt'); if(amt)F._amt=amt.value;
   const nt=document.getElementById('e_note'); if(nt)F._note=nt.value;
   openSheet(`<div class="xrow"><h3>🏷️ Choose category</h3><button class="x" onclick="closeSheet()">✕</button></div>
-  <div class="cgrid">${DB.cats.map(c=>`<div class="ctile" onclick="setCat('${c.id}')">
-    <div class="cem">${c.em}</div><div class="cnm">${esc(c.nm)}</div></div>`).join('')}</div>`)}
+  <div class="cgrid">${DB.cats.map(c=>`<div class="ctile ${F.cat===c.id?'sel':''}" onclick="setCat('${c.id}')">
+    <div class="cem">${c.em}</div><div class="cnm">${esc(c.nm)}</div></div>`).join('')}
+    <div class="ctile add" onclick="closeSheet();catEdit('')"><div class="cem">➕</div><div class="cnm">New</div></div>
+  </div>
+  <button class="btn sm ghost" style="margin-top:12px" onclick="closeSheet();setCats()">✏️ Edit / delete categories</button>`)}
 function setCat(id){F.cat=id;closeSheet();renderExp();
   const a=document.getElementById('e_amt'); if(a&&F._amt)a.value=F._amt;
   const n=document.getElementById('e_note'); if(n&&F._note)n.value=F._note;
@@ -920,6 +933,7 @@ function renderRep(){
     <span class="num ${over?'amt out':''}">${fmt(c.v)}${cb?' <span class="mini">/ '+fmt(cb)+'</span>':''}</span></div>
     ${cb?`<div class="bar" style="margin-top:5px;height:6px"><i class="${over?'over':''}" style="width:${Math.min(100,c.v/cb*100)}%"></i></div>`:''}
     </div>`}).join(''):`<div class="empty">No expenses this month.</div>`}</div>
+  ${moversHTML(mk)}
   <h2 class="sec">6-month trend</h2>
   <div class="box"><canvas id="cv2" height="0"></canvas></div>
   <button class="btn ghost" style="margin-bottom:10px" onclick="repPrint()">📄 Download / print this report</button>
@@ -960,19 +974,53 @@ function shopSplit(mk){
   return `<div class="row between" style="margin-top:10px;border-top:1px dashed var(--line);padding-top:8px">
     <span>🏠 Personal <b class="num">${fmt(me)}</b></span>
     <span>🏪 Shop <b class="num">${fmt(shop)}</b></span></div>`}
+function prevKey(mk){const d=new Date(mk+'-01');d.setMonth(d.getMonth()-1);return d.toISOString().slice(0,7)}
+/* His question is not "what did I spend" — it is "kahan ZYADA kharch ho gaya".
+   That is a comparison, so every line is this month against last month, biggest
+   increase first. */
+function moversHTML(mk){
+  const pk=prevKey(mk);
+  const sum=(k,cid)=>DB.exps.filter(e=>mkey(e.date)===k&&e.cat===cid).reduce((s,e)=>s+ +e.amt,0);
+  const rows=DB.cats.map(c=>({c,now:sum(mk,c.id),was:sum(pk,c.id)}))
+    .filter(r=>r.now||r.was).map(r=>({...r,d:r.now-r.was}))
+    .sort((a,b)=>b.d-a.d);
+  if(!rows.length)return '';
+  const up=rows.filter(r=>r.d>0), down=rows.filter(r=>r.d<0);
+  const line=r=>`<div class="item"><div class="em">${r.c.em}</div>
+    <div class="grow"><div class="nm">${esc(r.c.nm)}</div>
+      <div class="sub">${mlabel(pk)} ${fmt(r.was)} → ${mlabel(mk)} ${fmt(r.now)}</div></div>
+    <div class="amt ${r.d>0?'out':'in'} num">${r.d>0?'+':'−'}${fmt(Math.abs(r.d))}</div></div>`;
+  return `<h2 class="sec">Compared with ${mlabel(pk)}</h2>
+  <div class="box">
+    ${up.length?`<div class="mini" style="padding:4px 2px">Spent more</div>${up.slice(0,6).map(line).join('')}`:''}
+    ${down.length?`<div class="mini" style="padding:8px 2px 4px;border-top:1px dashed var(--line)">Spent less</div>${down.slice(0,4).map(line).join('')}`:''}
+  </div>`}
 function insightsHTML(mk,sp,bud,cats,tr){
   const out=[];
   if(!sp)return`<div class="insight">Add entries for this month and the analysis will appear here.</div>`;
-  if(cats[0])out.push(`Highest spend: <b>${cats[0].em} ${esc(cats[0].nm)}</b> me — ${fmt(cats[0].v)} (${Math.round(cats[0].v/sp*100)}%).`);
+  const pk=prevKey(mk), prev=monthSpend(pk);
+  // 1. where the money actually is
+  if(cats[0])out.push(`Biggest head this month: <b>${cats[0].em} ${esc(cats[0].nm)}</b> — ${fmt(cats[0].v)}, ${Math.round(cats[0].v/sp*100)}% of everything you spent.`);
+  // 2. the single line that answers "kahan zyada ho gaya"
+  const sumC=(k,cid)=>DB.exps.filter(e=>mkey(e.date)===k&&e.cat===cid).reduce((s,e)=>s+ +e.amt,0);
+  const movers=DB.cats.map(c=>({c,d:sumC(mk,c.id)-sumC(pk,c.id)})).filter(x=>x.d>0).sort((a,b)=>b.d-a.d);
+  if(prev&&movers[0])out.push(`Sabse zyada badha: <b>${esc(movers[0].c.nm)}</b> — ${fmt(movers[0].d)} more than ${mlabel(pk)}. ${movers[1]?'Then '+esc(movers[1].c.nm)+' (+'+fmt(movers[1].d)+').':''}`);
+  // 3. budgets crossed
   const overs=cats.filter(c=>+c.bud&&c.v>+c.bud);
-  if(overs.length)out.push(`⚠️ Over budget: ${overs.map(c=>`<b>${esc(c.nm)}</b> (+${fmt(c.v-c.bud)})`).join(', ')} — watch these next month.`);
-  const goods=cats.filter(c=>+c.bud&&c.v<=+c.bud*.8);
-  if(goods.length)out.push(`👏 Under control: ${goods.map(c=>esc(c.nm)).join(', ')} — stayed within budget.`);
-  const i=tr.findIndex(t=>t.k===mk);
-  if(i>0&&tr[i-1].v>0){const d=sp-tr[i-1].v;
-    out.push(d>0?`You spent <b>${fmt(d)} more</b> than last month (${mlabel(tr[i-1].k)}: ${fmt(tr[i-1].v)}).`
-      :`You spent <b>${fmt(-d)} less</b> than last month — well done! 👍`)}
-  if(bud&&sp>bud)out.push(`${fmt(sp-bud)} over your total budget. ${cats[0]?'Cutting down on '+esc(cats[0].nm)+' will help the most.':''}`);
+  if(overs.length)out.push(`⚠️ Over budget: ${overs.map(c=>`<b>${esc(c.nm)}</b> (+${fmt(c.v-c.bud)})`).join(', ')}.`);
+  // 4. the one saving worth making
+  if(cats[0]&&+cats[0].bud===0)out.push(`💡 <b>${esc(cats[0].nm)}</b> ka koi budget set nahi hai. Ek limit rakhoge toh cross hone par app turant batayegi.`);
+  // 5. month against month
+  if(prev){const dd=sp-prev;
+    out.push(dd>0?`Overall <b>${fmt(dd)} more</b> than ${mlabel(pk)} (${fmt(prev)}).`
+                 :`Overall <b>${fmt(-dd)} less</b> than ${mlabel(pk)} — well done. 👍`)}
+  // 6. what a small cut is worth
+  if(cats[0]&&cats[0].v>0){const cut=Math.round(cats[0].v*0.2/100)*100;
+    if(cut>=100)out.push(`Agar sirf <b>${esc(cats[0].nm)}</b> me 20% kam karo toh mahine ke <b>${fmt(cut)}</b> bachenge — saal ka ${fmt(cut*12)}.`)}
+  // 7. shop vs personal, only when it is real
+  const L=DB.exps.filter(e=>mkey(e.date)===mk);
+  const shop=L.filter(e=>e.who==='shop').reduce((s,e)=>s+ +e.amt,0);
+  if(shop)out.push(`Isme ${fmt(shop)} shop ka hai — apna personal kharcha ${fmt(sp-shop)} hua.`);
   return out.map(t=>`<div class="insight">${t}</div>`).join('')}
 function drawBars(id,data,vert,budLine){
   const cv=document.getElementById(id);if(!cv)return;
@@ -1020,7 +1068,7 @@ function setMoney(){
 function saveMoney(){
   DB.cashOpen=+document.getElementById('s_cash').value||0;
   DB.budget=+document.getElementById('s_bud').value||0;
-  S();toast('✅ Saved');setBack();go(CUR)}
+  S();closeSheet();toast('✅ Saved');go(CUR)}
 function setBanks(){
   openSheet(`<div class="xrow"><h3>🏦 Banks</h3><button class="x" onclick="setBack()">‹</button></div>
   <div id="s_banks">${DB.banks.map(b=>bankRow(b)).join('')}</div>
@@ -1035,7 +1083,7 @@ function saveBanks(){
   DB.banks=[...document.querySelectorAll('#s_banks [data-bank]')].map(r=>({
     id:r.dataset.id||uid(),nm:r.querySelector('[data-bnm]').value.trim(),open:+r.querySelector('[data-bop]').value||0}))
     .filter(b=>b.nm);
-  S();toast('✅ Saved');setBack();go(CUR)}
+  S();closeSheet();toast('✅ Saved');go(CUR)}
 function catUsed(id){return DB.exps.filter(e=>e.cat===id).length}
 function setCats(){
   const unused=DB.cats.filter(c=>!catUsed(c.id)).length;
@@ -1050,7 +1098,8 @@ function catTile(c){const n=catUsed(c.id);
   return`<div class="ctile" onclick="catEdit('${c.id}')">
     <div class="cem">${c.em||'🏷️'}</div>
     <div class="cnm">${esc(c.nm)}</div>
-    <div class="cbd">${c.bud?fmt(c.bud):(n?n+' entries':'—')}</div></div>`}
+    <div class="cbd">${c.bud?fmt(c.bud):(n?n+' entries':'—')}</div>
+    <div class="chint">tap to edit</div></div>`}
 /* One category at a time, in a small sheet — a grid of 15 editable rows was the bulk
    he was complaining about; a grid of tiles shows everything at a glance instead. */
 function catEdit(id){
@@ -1072,7 +1121,7 @@ function catSave(id){
   if(!nm)return toast('Name likho');
   const obj={em:document.getElementById('ce_em').value.trim()||'🏷️',nm,bud:+document.getElementById('ce_bud').value||0};
   if(id){Object.assign(DB.cats.find(x=>x.id===id),obj)}else{DB.cats.push(Object.assign({id:uid()},obj))}
-  S();toast('✅ Saved');setCats();go(CUR)}
+  S();closeSheet();toast('✅ Saved');go(CUR)}
 function catDel(id){
   const n=catUsed(id);
   if(n)return toast('Isme '+n+' kharche hain — pehle unki category badlo');
