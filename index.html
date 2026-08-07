@@ -108,16 +108,23 @@ audio{display:none}
 .cem{font-size:22px;line-height:1.2}
 .cnm{font-size:12px;font-weight:700;margin-top:3px;line-height:1.25;word-break:break-word}
 .cbd{font-size:10.5px;color:var(--mut);margin-top:2px}
+.fab{}
+#fab{position:fixed;right:16px;bottom:calc(78px + env(safe-area-inset-bottom,0px));z-index:45;
+  width:58px;height:58px;border-radius:50%;border:none;background:linear-gradient(135deg,#1F7A4D,#123B2A);
+  color:#fff;font-size:31px;line-height:1;box-shadow:0 6px 18px rgba(18,59,42,.42)}
+#fab:active{transform:scale(.94)}
+body.sheet-open #fab{display:none}
 .insight{border-left:4px solid var(--gold);background:#fff;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:13.5px;box-shadow:var(--sh)}
 </style>
 </head>
 <body>
 <header class="app">
   <div class="logo">₹</div>
-  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v15</span></h1>
+  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v16</span></h1>
   <button class="hbtn" onclick="openSettings()">⚙️</button>
 </header>
 <main id="main"></main>
+<button id="fab" onclick="quickAdd()" aria-label="Add expense">+</button>
 <nav class="bot">
   <button id="nb_home" onclick="go('home')"><span class="i">🏠</span>Home</button>
   <button id="nb_exp" onclick="go('exp')"><span class="i">🧾</span>Expenses</button>
@@ -253,8 +260,8 @@ function renderHome(){
   const pct=bud?Math.min(100,sp/bud*100):0;
   M().innerHTML=`
   <div class="strip">${strip}</div>
-  <div class="box">
-    <div class="row between"><b>Spend — ${mlabel(mk)}</b><span class="amt out num">${fmt(sp)}</span></div>
+  <div class="box" onclick="go('rep')" style="cursor:pointer">
+    <div class="row between"><b>Spend — ${mlabel(mk)}</b><span class="amt out num">${fmt(sp)} ›</span></div>
     ${bud?`<div style="margin-top:8px" class="bar"><i class="${sp>bud?'over':''}" style="width:${pct}%"></i></div>
     <div class="row between mini" style="margin-top:5px"><span>Budget ${fmt(bud)}</span><span>${sp>bud?'⚠️ '+fmt(sp-bud)+' over budget':fmt(bud-sp)+' remaining'}</span></div>`
     :`<div class="mini" style="margin-top:6px">No budget set yet — set it in ⚙️ Settings</div>`}
@@ -353,8 +360,7 @@ function lastEntriesHTML(n){
    .sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id)).slice(0,n);
   if(!all.length)return`<div class="empty">No entries yet.<br>First set your opening balances in ⚙️ Settings, then start adding expenses.</div>`;
   return all.map(x=>{
-    if(x._k==='e'){const c=DB.cats.find(k=>k.id===x.cat)||{em:'📦',nm:'Other'};
-      return rowHTML(c.em,esc(c.nm)+(x.note?' · '+esc(x.note):''),dfmt(x.date)+' · '+modeName(x.mode),'-'+fmt(x.amt),'out',x.aud?x.id:null)}
+    if(x._k==='e')return expRow(x);
     if(x._k==='l'){
       if(x.typ==='xfer')return rowHTML('🔄',esc(modeName(x.from))+' → '+esc(modeName(x.to)),dfmt(x.date)+' · transfer',fmt(x.amt),'');
       return rowHTML(x.typ==='in'?'⬇️':'⬆️',esc(x.party||'—')+(x.why?' · '+esc(x.why):''),dfmt(x.date)+' · '+modeName(x.mode)+(x.note?' · '+esc(x.note):''),(x.typ==='in'?'+':'-')+fmt(x.amt),x.typ==='in'?'in':'out')}
@@ -369,17 +375,6 @@ async function playAud(id){const b=await audGet(id);if(!b)return toast('Recordin
 
 /* ================= EXPENSE (entry line on TOP, list below) ================= */
 let F={cat:null,mode:'cash',aud:null,who:'me'};
-function tileChips(){ if(!(DB.tiles||[]).length)return '';
-  return (DB.tiles||[]).map(t=>`<button class="chip ${F.tile===t.id?'on':''}" onclick="tapTile('${t.id}')">${t.em} ${esc(t.nm)}</button>`).join('')
-    +`<button class="chip" onclick="manageTiles()">✏️ Edit</button>`}
-function tapTile(id){const t=(DB.tiles||[]).find(x=>x.id===id);if(!t)return;
-  const a0=document.getElementById('e_amt'); const typed=a0?a0.value:'';
-  F.cat=t.cat||F.cat; F.who=t.who||'me'; F.tile=t.id;
-  renderExp();
-  const n=document.getElementById('e_note'); if(n&&!n.value)n.value=t.nm;
-  const a=document.getElementById('e_amt');
-  if(a){ a.value=typed||(t.amt?t.amt:''); a.focus(); }
-  toast(t.em+' '+t.nm+(t.amt&&!typed?' — ₹'+t.amt+' bhara hai, badal sakte ho':' — ab amount likho'))}
 function manageTiles(){
   openSheet(`<div class="xrow"><h3>⚡ Shortcuts</h3><button class="x" onclick="setBack()">‹</button></div>
   <div class="mini" style="margin-bottom:10px">Jo kharche baar-baar hote hain unke buttons. Expenses screen pe tap karoge toh category apne aap set ho jayegi.</div>
@@ -428,18 +423,15 @@ function tileDel(id){
 function renderExp(){
   const mk=mkey();
   const c=DB.cats.find(x=>x.id===F.cat);
+  const label = F.tileNm ? F.tileNm : (c? c.em+' '+esc(c.nm) : '🏷️ Kis cheez ka kharcha?');
   M().innerHTML=`
   <div class="box" id="expForm">
-    <div class="chips" style="margin-bottom:12px" id="e_tiles">${tileChips()}</div>
     <input class="bigamt num" id="e_amt" type="number" inputmode="decimal" placeholder="₹ Amount spent" autofocus>
     <label class="f">PAID FROM</label>
     <div class="chips" id="e_modes">${modeChips()}</div>
-    <div class="row" style="margin-top:14px;gap:8px">
-      <button class="chip grow" style="text-align:left" onclick="pickCat()">
-        ${c?c.em+' '+esc(c.nm):'🏷️ Choose category'}</button>
-      <button class="chip ${F.who==='shop'?'gold on':''}" onclick="F.who=(F.who==='shop'?'me':'shop');renderExp()">
-        ${F.who==='shop'?'🏪 Shop':'🏠 Personal'}</button>
-    </div>
+    <label class="f">WHAT FOR</label>
+    <button class="chip block ${F.cat?'on':''}" style="width:100%;text-align:left;padding:13px 14px" onclick="pickCat()">
+      ${label}${F.who==='shop'?' <span style="opacity:.8">· 🏪 Shop</span>':''}</button>
     <div class="row" style="margin-top:10px;gap:8px">
       <input id="e_note" placeholder="Note (optional)" class="grow">
       <button class="mic" id="e_mic" onclick="toggleRec()">🎙️</button>
@@ -450,26 +442,46 @@ function renderExp(){
       <input id="e_date" type="date" value="${today()}" style="max-width:150px">
       <button class="btn grow" onclick="saveExp()">💾 Save expense</button>
     </div>
-    <button class="btn sm ghost" style="margin-top:10px;width:100%" onclick="importSheet()">📥 Import statement (paste code from Claude)</button>
   </div>
   <h2 class="sec">${mlabel(mk)} — ${fmt(monthSpend(mk))}</h2>
   <div class="box" id="expList">${expListHTML(mk)}</div>`;
 }
-/* The category list lives in ONE place — a picker that opens on demand — instead of
-   sitting open under every entry. */
 function pickCat(){
   const amt=document.getElementById('e_amt'); if(amt)F._amt=amt.value;
   const nt=document.getElementById('e_note'); if(nt)F._note=nt.value;
-  openSheet(`<div class="xrow"><h3>🏷️ Choose category</h3><button class="x" onclick="closeSheet()">✕</button></div>
-  <div class="cgrid">${DB.cats.map(c=>`<div class="ctile ${F.cat===c.id?'sel':''}" onclick="setCat('${c.id}')">
+  const T=DB.tiles||[];
+  openSheet(`<div class="xrow"><h3>Kis cheez ka kharcha?</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <div class="chips" style="margin-bottom:12px">
+    <button class="chip ${F.who!=='shop'?'on':''}" onclick="F.who='me';pickCat()">🏠 Personal</button>
+    <button class="chip gold ${F.who==='shop'?'on':''}" onclick="F.who='shop';pickCat()">🏪 Shop</button>
+  </div>
+  ${T.length?`<div class="mini" style="margin:0 2px 6px">⚡ Roz ke kharche</div>
+  <div class="cgrid" style="margin-bottom:14px">${T.map(t=>`
+    <div class="ctile ${F.tile===t.id?'sel':''}" onclick="useTile('${t.id}')">
+      <div class="cem">${t.em}</div><div class="cnm">${esc(t.nm)}</div></div>`).join('')}</div>`:''}
+  <div class="mini" style="margin:0 2px 6px">Saari categories</div>
+  <div class="cgrid">${DB.cats.map(c=>`<div class="ctile ${(F.cat===c.id&&!F.tile)?'sel':''}" onclick="setCat('${c.id}')">
     <div class="cem">${c.em}</div><div class="cnm">${esc(c.nm)}</div></div>`).join('')}
     <div class="ctile add" onclick="closeSheet();catEdit('')"><div class="cem">➕</div><div class="cnm">New</div></div>
   </div>
-  <button class="btn sm ghost" style="margin-top:12px" onclick="closeSheet();setCats()">✏️ Edit / delete categories</button>`)}
-function setCat(id){F.cat=id;closeSheet();renderExp();
+  <div class="two" style="margin-top:14px">
+    <button class="btn sm ghost" onclick="closeSheet();setCats()">✏️ Categories</button>
+    <button class="btn sm ghost" onclick="closeSheet();manageTiles()">⚡ Shortcuts</button>
+  </div>`)}
+/* Picking a shortcut sets the category and the shop flag in one tap. */
+function useTile(id){
+  const t=(DB.tiles||[]).find(x=>x.id===id); if(!t)return;
+  F.cat=t.cat; F.who=t.who||'me'; F.tile=t.id; F.tileNm=t.em+' '+t.nm;
+  if(t.amt&&!F._amt)F._amt=String(t.amt);
+  if(!F._note)F._note=t.nm;
+  closeSheet(); restoreExpForm()}
+function restoreExpForm(){
+  renderExp();
   const a=document.getElementById('e_amt'); if(a&&F._amt)a.value=F._amt;
   const n=document.getElementById('e_note'); if(n&&F._note)n.value=F._note;
-  F._amt='';F._note=''}
+  F._amt='';F._note='';
+  if(a&&!a.value)a.focus();}
+function setCat(id){F.cat=id;F.tile=null;F.tileNm='';closeSheet();restoreExpForm()}
 function modeChips(){
   const keep=()=>{const a=document.getElementById('e_amt');if(a)F._amt=a.value;};
   let h=`<button class="chip ${F.mode==='cash'?'on':''}" onclick="pickMode('cash')">💵 Cash</button>`;
@@ -493,12 +505,47 @@ function renderExpChips(){renderExp()}
 function expListHTML(mk){
   const L=DB.exps.filter(e=>mkey(e.date)===mk).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
   if(!L.length)return`<div class="empty">No expenses recorded this month.</div>`;
-  return L.map(e=>{const c=DB.cats.find(k=>k.id===e.cat)||{em:'📦',nm:'Other'};
-   return`<div class="item"><div class="em">${c.em}</div><div class="grow"><div class="nm">${esc(c.nm)}${e.note?' · <span style="font-weight:500">'+esc(e.note)+'</span>':''}</div>
-   <div class="sub">${dfmt(e.date)} · ${modeName(e.mode)}${e.who==='shop'?' · <b style="color:var(--gold)">🏪 Shop</b>':''}</div></div>
-   ${e.aud?`<button class="mic" style="width:34px;height:34px;font-size:14px" onclick="playAud('${e.id}')">▶️</button>`:''}
-   <div class="amt out num">-${fmt(e.amt)}</div>
-   <button class="x" onclick="delExp('${e.id}')">🗑️</button></div>`}).join('')}
+  return L.map(e=>expRow(e)).join('')}
+/* One readable row: what it was, the note, when and from where — and it opens for editing.
+   The old row squeezed all of that plus two buttons into one line and got cut off. */
+function expRow(e){
+  const c=DB.cats.find(k=>k.id===e.cat)||{em:'📦',nm:'Other'};
+  return`<div class="item" onclick="editExp('${e.id}')" style="cursor:pointer;align-items:flex-start;padding:12px 4px">
+    <div class="em">${c.em}</div>
+    <div class="grow" style="min-width:0">
+      <div class="row between"><div class="nm">${esc(c.nm)}</div><div class="amt out num">−${fmt(e.amt)}</div></div>
+      ${e.note?`<div style="font-size:13px;margin-top:2px">${esc(e.note)}</div>`:''}
+      <div class="sub" style="margin-top:3px">${dfmt(e.date)} · ${esc(modeName(e.mode))}${e.who==='shop'?' · <b style="color:var(--gold)">🏪 Shop</b>':''}${e.aud?' · 🎙️':''}</div>
+    </div></div>`}
+/* Editing an entry, not just deleting it — a wrong amount or category was unfixable. */
+function editExp(id){
+  const e=DB.exps.find(x=>x.id===id); if(!e)return;
+  const c=DB.cats.find(k=>k.id===e.cat)||{em:'📦',nm:'Other'};
+  openSheet(`<div class="xrow"><h3>✏️ Edit entry</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <input class="bigamt num" id="ee_amt" type="number" inputmode="decimal" value="${e.amt}">
+  <label class="f">PAID FROM</label>
+  <select id="ee_mode">
+    <option value="cash" ${e.mode==='cash'?'selected':''}>💵 Cash</option>
+    ${DB.banks.map(b=>`<option value="${b.id}" ${e.mode===b.id?'selected':''}>🏦 ${esc(b.nm)}</option>`).join('')}
+    ${DB.cards.map(x=>`<option value="${x.id}" ${e.mode===x.id?'selected':''}>💳 ${esc(x.nm)}</option>`).join('')}
+  </select>
+  <label class="f">CATEGORY</label>
+  <select id="ee_cat">${DB.cats.map(k=>`<option value="${k.id}" ${e.cat===k.id?'selected':''}>${k.em} ${esc(k.nm)}</option>`).join('')}</select>
+  <label class="f">KISKE LIYE?</label>
+  <select id="ee_who"><option value="me" ${e.who!=='shop'?'selected':''}>🏠 Personal</option><option value="shop" ${e.who==='shop'?'selected':''}>🏪 Shop</option></select>
+  <label class="f">NOTE</label><input id="ee_note" value="${esc(e.note||'')}">
+  <label class="f">DATE</label><input id="ee_date" type="date" value="${e.date}">
+  ${e.aud?`<button class="btn sm ghost" style="margin-top:10px" onclick="playAud('${e.id}')">▶️ Play voice note</button>`:''}
+  <button class="btn" style="margin-top:16px" onclick="saveExpEdit('${e.id}')">💾 Save changes</button>
+  <button class="btn red" style="margin-top:8px" onclick="delExp('${e.id}')">🗑️ Delete this entry</button>`)}
+function saveExpEdit(id){
+  const e=DB.exps.find(x=>x.id===id); if(!e)return;
+  const amt=+document.getElementById('ee_amt').value;
+  if(!amt||amt<=0)return toast('Enter the amount');
+  e.amt=amt; e.mode=document.getElementById('ee_mode').value;
+  e.cat=document.getElementById('ee_cat').value; e.who=document.getElementById('ee_who').value;
+  e.note=document.getElementById('ee_note').value.trim(); e.date=document.getElementById('ee_date').value||e.date;
+  S();closeSheet();toast('✅ Updated');go(CUR)}
 function saveExp(){
   const amt=+document.getElementById('e_amt').value;
   if(!amt||amt<=0)return toast('Enter the amount');
@@ -507,10 +554,10 @@ function saveExp(){
   DB.exps.push({id,date:document.getElementById('e_date').value||today(),amt,cat:F.cat,mode:F.mode,
     note:document.getElementById('e_note').value.trim(),aud:!!F.aud,who:F.who||'me'});
   if(F.aud)audPut(id,F.aud);
-  S();F={cat:null,mode:F.mode,aud:null,who:'me'};
+  S();F={cat:null,mode:F.mode,aud:null,who:'me',tile:null,tileNm:''};
   toast('✅ Expense saved — '+fmt(amt));renderExp()}
 function delExp(id){if(!confirm('Delete this expense?'))return;
-  DB.exps=DB.exps.filter(e=>e.id!==id);audDel(id);S();renderExp()}
+  DB.exps=DB.exps.filter(e=>e.id!==id);audDel(id);S();closeSheet();toast('Deleted');go(CUR)}
 
 /* ---- statement import ---- */
 function importSheet(){
@@ -750,6 +797,7 @@ function renderAccPage(){
     :(id==='cash'?`<button class="btn ghost" style="margin-top:10px" onclick="closeSheet();setMoney()">✏️ Edit opening balance</button>`
       :`<button class="btn ghost" style="margin-top:10px" onclick="closeSheet();setBanks()">✏️ Edit bank</button>`)}
   </div>
+  ${accBreakdownHTML(id)}
   <h2 class="sec">Statement</h2>
   <div class="box">
     <div class="row" style="gap:8px">
@@ -773,6 +821,39 @@ function renderAccPage(){
       <div class="nm">${esc(r.nm)}</div><div class="sub">${dfmt(r.date)}${r.sub?' · '+esc(r.sub):''}</div></div>
      <div class="amt ${r.amt>0?'in':'out'} num">${r.amt>0?'+':'-'}${fmt(Math.abs(r.amt))}</div></div>`).join('')
     :`<div class="empty">Is period me koi entry nahi.</div>`}</div>`)}
+/* Where the money on this account actually went, for the chosen dates. */
+function accBreakdownHTML(id){
+  const E=DB.exps.filter(e=>e.mode===id&&(!AP.from||e.date>=AP.from)&&(!AP.to||e.date<=AP.to));
+  if(!E.length)return '';
+  const tot=E.reduce((s,e)=>s+ +e.amt,0);
+  const by={}; E.forEach(e=>by[e.cat]=(by[e.cat]||0)+ +e.amt);
+  const cats=DB.cats.map(c=>({c,v:by[c.id]||0})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v);
+  const big=[...E].sort((a,b)=>b.amt-a.amt).slice(0,5);
+  // small amounts that keep repeating are the ones nobody notices
+  const cnt={}; E.forEach(e=>{const k=(e.note||'').trim().toLowerCase()||'(no note)';
+    if(!cnt[k])cnt[k]={n:0,v:0,label:(e.note||'').trim()||'—'}; cnt[k].n++; cnt[k].v+=+e.amt;});
+  const rep=Object.values(cnt).filter(x=>x.n>=3).sort((a,b)=>b.v-a.v).slice(0,3);
+  return `<h2 class="sec">Paisa kahan gaya</h2>
+  <div class="box">
+    <div class="row between"><span class="mini">${E.length} spends in this period</span><b class="num">${fmt(tot)}</b></div>
+    <div style="margin-top:10px">${cats.map(x=>`
+      <div style="padding:6px 0">
+        <div class="row between"><span>${x.c.em} ${esc(x.c.nm)}</span>
+          <span class="num">${fmt(x.v)} <span class="mini">${Math.round(x.v/tot*100)}%</span></span></div>
+        <div class="bar" style="height:6px;margin-top:4px"><i style="width:${Math.round(x.v/tot*100)}%"></i></div>
+      </div>`).join('')}</div>
+  </div>
+  <h2 class="sec">Sabse bade kharche</h2>
+  <div class="box">${big.map(e=>{const c=DB.cats.find(k=>k.id===e.cat)||{em:'📦',nm:'Other'};
+    return `<div class="item" onclick="editExp('${e.id}')" style="cursor:pointer">
+      <div class="em">${c.em}</div><div class="grow">
+        <div class="nm">${esc(e.note||c.nm)}</div><div class="sub">${dfmt(e.date)} · ${esc(c.nm)}</div></div>
+      <div class="amt out num">−${fmt(e.amt)}</div></div>`}).join('')}</div>
+  ${rep.length?`<h2 class="sec">Baar-baar ho raha hai</h2>
+  <div class="box"><div class="mini" style="padding:2px 2px 8px">Chhote kharche jo dohrate hain — yahin paisa chupke se nikal jaata hai.</div>
+  ${rep.map(x=>`<div class="item"><div class="em">🔁</div>
+    <div class="grow"><div class="nm">${esc(x.label)}</div><div class="sub">${x.n} times</div></div>
+    <div class="amt out num">−${fmt(x.v)}</div></div>`).join('')}</div>`:''}`}
 function apRange(m){
   if(!m){AP.from='2000-01-01';AP.to=today();}
   else{const d=new Date();d.setMonth(d.getMonth()-m);AP.from=d.toISOString().slice(0,10);AP.to=today();}
@@ -1143,6 +1224,7 @@ function setBackup(){
   <div class="two"><button class="btn ghost" onclick="doBackup()">⬇️ Download backup</button>
   <button class="btn ghost" onclick="document.getElementById('s_file').click()">⬆️ Restore</button></div>
   <input type="file" id="s_file" accept=".json" class="hide" onchange="doRestore(this)">
+  <button class="btn ghost" style="margin-top:14px" onclick="importSheet()">📥 Import a statement</button>
   <div class="mini" style="margin-top:8px">Data lives only on this device — take a backup at least once a week (voice notes are included).</div>`)}
 async function doBackup(){
   const auds={};for(const e of DB.exps){if(e.aud){const b=await audGet(e.id);
@@ -1262,6 +1344,10 @@ function sharedToLedger(amt,date,who,mode){
     const d=document.getElementById('l_date'); if(d&&date)d.value=date;
     toast('Kiska paisa hai, confirm kar lo');
   },60)}
+
+/* One tap to a new entry from any screen. */
+function quickAdd(){ F={cat:null,mode:F.mode||'cash',aud:null,who:'me',tile:null,tileNm:''};
+  go('exp'); setTimeout(()=>{const a=document.getElementById('e_amt'); if(a)a.focus();},60)}
 
 /* ================= SHEET + INIT ================= */
 function openSheet(html){document.getElementById('sheetIn').innerHTML=html;
