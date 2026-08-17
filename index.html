@@ -120,7 +120,7 @@ body.sheet-open #fab{display:none}
 <body>
 <header class="app">
   <div class="logo">₹</div>
-  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v16</span></h1>
+  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v17</span></h1>
   <button class="hbtn" onclick="openSettings()">⚙️</button>
 </header>
 <main id="main"></main>
@@ -128,7 +128,7 @@ body.sheet-open #fab{display:none}
 <nav class="bot">
   <button id="nb_home" onclick="go('home')"><span class="i">🏠</span>Home</button>
   <button id="nb_exp" onclick="go('exp')"><span class="i">🧾</span>Expenses</button>
-  <button id="nb_led" onclick="go('led')"><span class="i">🤝</span>Ledger</button>
+  <button id="nb_liab" onclick="go('liab')"><span class="i">💰</span>Udhaar</button>
   <button id="nb_card" onclick="go('card')"><span class="i">💳</span>Cards</button>
   <button id="nb_rep" onclick="go('rep')"><span class="i">📊</span>Reports</button>
 </nav>
@@ -146,8 +146,11 @@ if('serviceWorker' in navigator){
 /* ================= DATA ================= */
 const LS='pb_khata_v1';
 let DB=JSON.parse(localStorage.getItem(LS)||'null')||{
-  cashOpen:0, banks:[], cards:[], budget:0,
+  cashOpen:0, banks:[], cards:[], budget:0, income:0,
   cats:[],
+
+  liab:[],   // LIABILITIES {id,party,kind,amt,date,due,why,rate,note}  kind:'person'|'business'|'bank'|'other'
+  repay:[],  // repayments against a liability {id,liabId,date,amt,mode,note}
 
   exps:[],   // {id,date,amt,cat,mode,note,aud,who}  mode:'cash'|bankId|cardId · who:'me'|'shop'
   led:[],    // {id,date,typ:'in'|'out',party,amt,mode,note,why,due,who}
@@ -160,7 +163,7 @@ const WANT_CATS=[
   {nm:'Groceries',em:'🛒'},{nm:'Food & Dining',em:'🍽️'},{nm:'Utilities & Bills',em:'💡'},
   {nm:'Transport',em:'🚕'},{nm:'School Fees',em:'🎓'},{nm:'EMI & Loans',em:'🏦'},
   {nm:'Household',em:'🏠'},{nm:'Health',em:'💊'},{nm:'Family',em:'👨‍👩‍👦'},
-  {nm:'Shopping',em:'🛍️'},{nm:'Shop — PARAMPARA',em:'🏪'},{nm:'Other',em:'📦'}];
+  {nm:'Shopping',em:'🛍️'},{nm:'Interest & Fees',em:'💸'},{nm:'Shop — PARAMPARA',em:'🏪'},{nm:'Other',em:'📦'}];
 /* Old name → new name. Renaming keeps the id, so nothing already recorded is orphaned. */
 const RENAME={'ghar ka saman':'Groceries','khana-peena':'Food & Dining','bills & recharge':'Utilities & Bills',
   'mobile/net':'Utilities & Bills','cab / travel':'Transport','fuel/travel':'Transport',
@@ -174,6 +177,7 @@ const WANT_TILES=[
   {nm:'Shop expense',em:'🏪',cat:'Shop — PARAMPARA',who:'shop'}];
 function migrate(){
   DB.cats=DB.cats||[]; DB.tiles=DB.tiles||[]; DB.led=DB.led||[]; DB.exps=DB.exps||[];
+  DB.liab=DB.liab||[]; DB.repay=DB.repay||[]; DB.pays=DB.pays||[];
   // rename first, so the "do I already have it" check sees the new names
   DB.cats.forEach(c=>{ const nn=RENAME[String(c.nm).toLowerCase()];
     if(nn){ c.nm=nn; const w=WANT_CATS.find(x=>x.nm===nn); if(w)c.em=w.em; } });
@@ -229,6 +233,7 @@ function accBal(id){ // 'cash' or bankId
     if(l.mode===id)v+=l.typ==='in'?+l.amt:-l.amt});
   DB.exps.forEach(e=>{if(e.mode===id)v-=+e.amt});
   DB.pays.forEach(p=>{if(p.from===id)v-=+p.amt});
+  (DB.repay||[]).forEach(r=>{if(r.mode===id)v-=+r.amt});   // udhaar chukaya — paisa gaya
   return v}
 function cardOut(id){const c=cardById(id);if(!c)return 0;let v=+c.open||0;
   DB.exps.forEach(e=>{if(e.mode===id)v+=+e.amt});
@@ -244,8 +249,8 @@ function monthSpend(mk){return DB.exps.filter(e=>mkey(e.date)===mk).reduce((s,e)
 /* ================= NAV ================= */
 let CUR='home';
 function go(t){CUR=t;document.querySelectorAll('nav.bot button').forEach(b=>b.classList.remove('on'));
-  const nb=document.getElementById('nb_'+t);if(nb)nb.classList.add('on');
-  ({home:renderHome,exp:renderExp,led:renderLed,card:renderCards,rep:renderRep})[t]();
+  const nb=document.getElementById('nb_'+(t==='led'?'liab':t));if(nb)nb.classList.add('on');
+  ({home:renderHome,exp:renderExp,liab:renderLiab,led:renderLed,card:renderCards,rep:renderRep})[t]();
   window.scrollTo(0,0)}
 const M=()=>document.getElementById('main');
 
@@ -260,6 +265,7 @@ function renderHome(){
   const pct=bud?Math.min(100,sp/bud*100):0;
   M().innerHTML=`
   <div class="strip">${strip}</div>
+  ${liabHomeHTML()}
   <div class="box" onclick="go('rep')" style="cursor:pointer">
     <div class="row between"><b>Spend — ${mlabel(mk)}</b><span class="amt out num">${fmt(sp)} ›</span></div>
     ${bud?`<div style="margin-top:8px" class="bar"><i class="${sp>bud?'over':''}" style="width:${pct}%"></i></div>
@@ -303,6 +309,13 @@ function commitments(days){
     out.push({d:late?-1:n,date:l.due,em:l.typ==='in'?'🔴':'🟢',
       nm:l.party+(l.why?' · '+l.why:''),amt:+l.amt,
       kind:l.typ==='in'?'pay':'get',late});
+  });
+  // written-down liabilities with a promised date
+  (DB.liab||[]).forEach(l=>{ if(!l.due)return; const o=liabOut(l); if(o<=0.5)return;
+    const d=new Date(l.due+'T00:00'); const nn=within(d);
+    if(nn===null&&d>=T)return;
+    const late=d<T;
+    out.push({d:late?-1:nn,date:l.due,em:'💰',nm:l.party+(l.why?' · '+l.why:''),amt:o,kind:'pay',late});
   });
   // bills that repeat every month, if he has marked them
   (DB.tiles||[]).forEach(t=>{ if(!+t.rep)return;
@@ -612,6 +625,329 @@ async function toggleRec(){
     document.getElementById('e_hasaud').classList.add('hide');
   }catch(err){toast('Microphone permission denied')}}
 function dropRec(){F.aud=null;document.getElementById('e_hasaud').classList.add('hide')}
+
+/* ================= LIABILITIES — udhaar ka asli hisaab =================
+   The ledger only ever knew *transactions*. But a liability is a standing fact:
+   "Alok ko 50,000 dena hai." He must be able to write that down in ten seconds,
+   without inventing a transaction, and it must stay on the screen until it is paid.
+   Every repayment chips it down, so the app can always answer the only three
+   questions that matter at 11pm: kisko, kitna, kisliye. */
+const LKIND={person:{em:'👤',nm:'Log'},business:{em:'🏪',nm:'Business'},bank:{em:'🏦',nm:'Bank/Loan'},other:{em:'📄',nm:'Other'}};
+function liabPaid(id){return DB.repay.filter(r=>r.liabId===id).reduce((s,r)=>s+ +r.amt,0)}
+function liabOut(l){return Math.max(0,(+l.amt||0)-liabPaid(l.id))}
+function liabOpen(){return DB.liab.filter(l=>liabOut(l)>0.5)}
+/* Simple interest on what is still outstanding. Shown as its own line and never folded
+   into the principal — so the big number on the screen is always one he can verify himself. */
+function liabAccrued(l){
+  const r=+l.rate||0; if(!r||!l.date)return 0;
+  const mo=(new Date(today()+'T00:00')-new Date(l.date+'T00:00'))/86400000/30.4375;
+  return mo<=0?0:liabOut(l)*r/100*mo}
+function liabTotals(){
+  const t={person:0,business:0,bank:0,other:0,card:0,total:0,orig:0,paid:0,byaaj:0,late:0};
+  liabOpen().forEach(l=>{t[l.kind||'person']+=liabOut(l);t.byaaj+=liabAccrued(l);
+    if(l.due&&l.due<today())t.late++});
+  DB.liab.forEach(l=>{t.orig+=+l.amt||0;t.paid+=liabPaid(l.id)});
+  t.card=DB.cards.reduce((s,c)=>s+cardOut(c.id),0);
+  t.total=t.person+t.business+t.bank+t.other+t.card;
+  return t}
+/* Settlement order: interest bleeds daily, a broken promise costs the relationship.
+   Those two decide the queue — not the size of the amount. */
+function liabRank(){
+  const T=new Date(today()+'T00:00');
+  return liabOpen().map(l=>{
+    const days=l.due?Math.round((new Date(l.due+'T00:00')-T)/86400000):null;
+    const rate=+l.rate||0; let sc=rate*12;
+    if(days!==null){ if(days<0)sc+=70+Math.min(40,-days); else if(days<=7)sc+=32; else if(days<=30)sc+=14; }
+    return {l,days,rate,out:liabOut(l),sc}}).sort((a,b)=>b.sc-a.sc||b.out-a.out)}
+let LP=[];
+function liabParties(){
+  const m={};
+  liabOpen().forEach(l=>{const k=l.party||'—';
+    if(!m[k])m[k]={nm:k,em:(LKIND[l.kind]||LKIND.person).em,out:0,n:0,whys:[],due:''};
+    const o=m[k]; o.out+=liabOut(l); o.n++; if(l.why)o.whys.push(l.why);
+    if(l.due&&(!o.due||l.due<o.due))o.due=l.due});
+  LP=Object.values(m).sort((a,b)=>b.out-a.out);
+  LP.forEach((p,i)=>{p.i=i;p.whys=[...new Set(p.whys)].join(', ')||'reason likha nahi';});
+  return LP}
+/* Income minus what the house actually eats — the only honest answer to
+   "how much can I put on the debt this month". */
+function capacity(){
+  const inc=+DB.income||0, mk=mkey();
+  const ghar=DB.exps.filter(e=>mkey(e.date)===mk&&e.who!=='shop').reduce((s,e)=>s+ +e.amt,0);
+  const shop=DB.exps.filter(e=>mkey(e.date)===mk&&e.who==='shop').reduce((s,e)=>s+ +e.amt,0);
+  const paid=DB.repay.filter(r=>mkey(r.date)===mk).reduce((s,r)=>s+ +r.amt,0);
+  return {inc,ghar,shop,paid,left:inc-ghar-paid}}
+
+function renderLiab(){
+  const t=liabTotals(), rk=liabRank(), P=liabParties(), cap=capacity();
+  const pctPaid=t.orig?Math.round(t.paid/t.orig*100):0;
+  M().innerHTML=`
+  <div class="box" style="border-left:4px solid var(--red)">
+    <div class="row between"><b>💰 Total dena hai</b><span class="mini">as on ${dfmt(today())}</span></div>
+    <div class="amt out num" style="font-size:31px;margin:4px 0 2px">${fmt(t.total)}</div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px">
+      ${t.person?`<span class="pill">👤 Log ${fmt(t.person)}</span>`:''}
+      ${t.business?`<span class="pill">🏪 Business ${fmt(t.business)}</span>`:''}
+      ${t.bank?`<span class="pill">🏦 Loan ${fmt(t.bank)}</span>`:''}
+      ${t.other?`<span class="pill">📄 Other ${fmt(t.other)}</span>`:''}
+      ${t.card?`<span class="pill">💳 Cards ${fmt(t.card)}</span>`:''}
+    </div>
+    ${t.byaaj>=1?`<div class="mini" style="margin-top:8px">+ ${fmt(t.byaaj)} byaaj ab tak jud chuka hai — principal me nahi joda, alag se dikhaya hai</div>`:''}
+    ${t.late?`<div class="mini" style="margin-top:6px;color:var(--red)">⏰ ${t.late} udhaar ki tareekh nikal chuki hai</div>`:''}
+    ${t.orig?`<div class="bar" style="margin-top:10px"><i style="width:${Math.min(100,pctPaid)}%"></i></div>
+    <div class="row between mini" style="margin-top:5px"><span>Likha tha ${fmt(t.orig)}</span><span>✅ ${fmt(t.paid)} utar gaya (${pctPaid}%)</span></div>`:''}
+  </div>
+  <div class="two">
+    <button class="btn red" onclick="liabForm()">➕ Naya udhaar likho</button>
+    <button class="btn ghost" onclick="asOnSheet()">📅 As-on hisaab</button>
+  </div>
+
+  ${rk.length?`<h2 class="sec">⚡ Pehle kise chukayein</h2>
+  <div class="box"><div class="mini" style="padding:2px 2px 8px">Jahan byaaj chal raha hai aur jahan tareekh nikal gayi — wo sabse upar.</div>
+  ${rk.slice(0,6).map((x,i)=>`<div class="item" onclick="liabView('${x.l.id}')" style="cursor:pointer">
+    <div class="em" style="font-family:Georgia,serif;color:var(--mut)">${i+1}</div>
+    <div class="grow"><div class="nm">${esc(x.l.party)}${x.l.why?' · <span style="font-weight:500">'+esc(x.l.why)+'</span>':''}</div>
+      <div class="sub">${x.rate?'<b>'+x.rate+'%/mahina</b> · ':''}${x.days===null?'tareekh nahi di':x.days<0?'<b style="color:var(--red)">'+(-x.days)+' din late</b>':x.days===0?'<b style="color:var(--red)">aaj dena hai</b>':x.days+' din baaki'}</div></div>
+    <div class="amt out num">${fmt(x.out)}</div></div>`).join('')}</div>`:''}
+
+  <h2 class="sec">Kisko kitna dena hai</h2>
+  <div class="box">
+    ${P.length?P.map(p=>`<div class="item" onclick="liabPartyView(${p.i})" style="cursor:pointer">
+      <div class="em">${p.em}</div>
+      <div class="grow"><div class="nm">${esc(p.nm)}</div><div class="sub">${esc(p.whys)}${p.n>1?' · '+p.n+' entries':''}${p.due?' · '+dueTag2(p.due):''}</div></div>
+      <span class="tag give">${fmt(p.out)}</span></div>`).join(''):''}
+    ${DB.cards.map(c=>cardOut(c.id)>0.5?`<div class="item" onclick="accPage('${c.id}')" style="cursor:pointer">
+      <div class="em">💳</div><div class="grow"><div class="nm">${esc(c.nm)}</div>
+      <div class="sub">Credit card outstanding${c.dueDay?' · bill '+c.dueDay+' tarikh':''}</div></div>
+      <span class="tag give">${fmt(cardOut(c.id))}</span></div>`:'').join('')}
+    ${!P.length&&!t.card?`<div class="empty">Abhi kuch likha nahi hai.<br><br>➕ <b>Naya udhaar likho</b> — bas naam, rakam aur kisliye.<br>Paisa kab aaya tha, transaction kya tha — wo sab zaruri nahi.</div>`:''}
+  </div>
+
+  <h2 class="sec">Ghar ka budget &amp; chukane ki takat</h2>
+  <div class="box">
+    ${cap.inc?`
+    <div class="row between"><span>Mahine ki income</span><b class="num">${fmt(cap.inc)}</b></div>
+    <div class="row between" style="margin-top:4px"><span>− Ghar ke kharche (${mlabel(mkey())})</span><b class="num">${fmt(cap.ghar)}</b></div>
+    <div class="row between" style="margin-top:4px"><span>− Udhaar chukaya is mahine</span><b class="num">${fmt(cap.paid)}</b></div>
+    <div class="row between" style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">
+      <b>${cap.left<0?'⚠️ Itna kam pad raha hai':'Bacha — udhaar chukane ke liye'}</b>
+      <b class="amt ${cap.left<0?'out':'in'} num">${fmt(Math.abs(cap.left))}</b></div>
+    ${cap.left>0&&t.total?`<div class="mini" style="margin-top:8px">💡 Is raftaar se poora udhaar utarne me lagbhag <b>${Math.ceil(t.total/cap.left)} mahine</b> lagenge. Byaaj isme nahi joda.</div>`:''}
+    ${cap.left<0?`<div class="mini" style="margin-top:8px;color:var(--red)">Kharche income se zyada hain — naya udhaar isi wajah se banta hai. Reports me dekho kahan se kam ho sakta hai.</div>`:''}
+    ${cap.shop?`<div class="mini" style="margin-top:6px">🏪 Shop ke kharche ${fmt(cap.shop)} — ghar ke hisaab se alag rakhe gaye hain.</div>`:''}`
+    :`<div class="mini" style="margin-bottom:10px">Mahine ki income set karo, toh app khud bata dega ki har mahine kitna udhaar chuka sakte ho aur kitne mahine me poora khatam hoga.</div>
+      <button class="btn ghost" onclick="setMoney()">⚙️ Income &amp; budget set karo</button>`}
+  </div>
+
+  <button class="btn ghost" style="margin-top:12px" onclick="go('led')">🤝 Cash IN / OUT entry (lena-den ledger)</button>
+  <div class="mini" style="margin-top:6px;text-align:center">Wahan sirf tab jao jab paisa aaj haath me aaya ya gaya ho.</div>`;
+}
+function dueTag2(d){
+  const n=Math.round((new Date(d+'T00:00')-new Date(today()+'T00:00'))/86400000);
+  if(n<0)return '<b style="color:var(--red)">'+(-n)+' din late</b>';
+  if(n===0)return '<b style="color:var(--red)">aaj due</b>';
+  if(n<=7)return '<b style="color:var(--gold)">'+n+' din baaki</b>';
+  return 'due '+dfmt(d)}
+
+/* ---- write a liability down ---- */
+let LQ={kind:'person'};
+function liabForm(id){
+  const l=id?DB.liab.find(x=>x.id===id):null;
+  LQ.kind=l?(l.kind||'person'):'person';
+  const names=[...new Set(DB.liab.map(x=>x.party).concat(DB.led.map(x=>x.party)).filter(Boolean))];
+  openSheet(`<div class="xrow"><h3>${l?'✏️ Udhaar edit':'➕ Naya udhaar'}</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <div class="mini" style="margin-bottom:8px">Sirf likh do — kisko, kitna, kisliye. Paisa aaj aaya ho ya do saal pehle, koi farak nahi.</div>
+  <input class="bigamt num" id="q_amt" type="number" inputmode="decimal" placeholder="₹ Kitna dena hai" value="${l?l.amt:''}">
+  <label class="f">KISKO DENA HAI</label>
+  <input id="q_party" list="q_parties" placeholder="Alok / Sumit / Papa / Pappu" value="${l?esc(l.party):''}">
+  <datalist id="q_parties">${names.map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
+  <label class="f">KIS TARAH KA</label>
+  <div class="chips" id="q_kinds">${Object.keys(LKIND).map(k=>`<button class="chip ${LQ.kind===k?'on':''}" onclick="LQ.kind='${k}';document.querySelectorAll('#q_kinds .chip').forEach(b=>b.classList.remove('on'));this.classList.add('on')">${LKIND[k].em} ${LKIND[k].nm}</button>`).join('')}</div>
+  <label class="f">KISLIYE (reason)</label>
+  <input id="q_why" placeholder="Shop ka maal / school fee / hospital / purana udhaar" value="${l?esc(l.why||''):''}">
+  <div class="two" style="margin-top:10px">
+    <div><label class="f">KAB LIYA THA</label><input id="q_date" type="date" value="${l?esc(l.date):today()}"></div>
+    <div><label class="f">KAB TAK DENA HAI</label><input id="q_due" type="date" value="${l?esc(l.due||''):''}"></div>
+  </div>
+  <label class="f">BYAAJ % PAR MAHINA (optional)</label>
+  <input id="q_rate" type="number" inputmode="decimal" placeholder="0 = bina byaaj" value="${l&&l.rate?l.rate:''}">
+  <label class="f">NOTE (optional)</label>
+  <input id="q_note" placeholder="Kuch yaad rakhne layak" value="${l?esc(l.note||''):''}">
+  <button class="btn red" style="margin-top:14px" onclick="saveLiab(${l?"'"+l.id+"'":''})">💾 Save</button>
+  ${l?`<button class="btn ghost" style="margin-top:8px" onclick="delLiab('${l.id}')">🗑️ Delete</button>`:''}
+  <div class="mini" style="margin-top:8px">⚠️ Ye likhne se cash/bank balance nahi badlega — ye sirf ye batata hai ki aap par kitna bakaya hai.</div>`)}
+function saveLiab(id){
+  const amt=+document.getElementById('q_amt').value;
+  const party=document.getElementById('q_party').value.trim();
+  if(!amt||amt<=0)return toast('Rakam likho');
+  if(!party)return toast('Naam likho — kisko dena hai');
+  const o={party,amt,kind:LQ.kind,
+    why:document.getElementById('q_why').value.trim(),
+    date:document.getElementById('q_date').value||today(),
+    due:document.getElementById('q_due').value||'',
+    rate:+document.getElementById('q_rate').value||0,
+    note:document.getElementById('q_note').value.trim()};
+  if(id){
+    const paid=liabPaid(id);
+    if(o.amt<paid-0.5)return toast('Isme '+fmt(paid)+' chuka diya gaya hai — rakam usse kam nahi ho sakti');
+    Object.assign(DB.liab.find(x=>x.id===id),o);
+  } else DB.liab.push({id:uid(),...o});
+  S();closeSheet();toast('✅ '+party+' — '+fmt(amt)+' likh liya');go('liab')}
+function delLiab(id){
+  const l=DB.liab.find(x=>x.id===id); if(!l)return;
+  const n=DB.repay.filter(r=>r.liabId===id).length;
+  if(!confirm('"'+l.party+' — '+fmt(l.amt)+'" delete karein?'+(n?'\n\n'+n+' payment entry bhi hat jayengi.':'')))return;
+  DB.liab=DB.liab.filter(x=>x.id!==id);
+  DB.repay=DB.repay.filter(r=>r.liabId!==id);
+  S();closeSheet();toast('🗑️ Delete ho gaya');go('liab')}
+
+/* ---- one liability, opened up ---- */
+function liabView(id){
+  const l=DB.liab.find(x=>x.id===id); if(!l)return;
+  const out=liabOut(l), paid=liabPaid(id), byaaj=liabAccrued(l);
+  const rows=DB.repay.filter(r=>r.liabId===id).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+  const K=LKIND[l.kind]||LKIND.person;
+  openSheet(`<div class="xrow"><h3>${K.em} ${esc(l.party)}</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <div class="box">
+    <div class="row between"><span>Abhi bakaya</span><b class="amt out num" style="font-size:22px">${fmt(out)}</b></div>
+    <div class="row between mini" style="margin-top:6px"><span>Liya tha ${fmt(l.amt)} · ${dfmt(l.date)}</span><span>✅ ${fmt(paid)} diya</span></div>
+    ${l.amt?`<div class="bar" style="margin-top:8px"><i style="width:${Math.min(100,paid/l.amt*100)}%"></i></div>`:''}
+    <div class="mini" style="margin-top:8px">
+      <b>Kisliye:</b> ${esc(l.why||'likha nahi')}<br>
+      ${l.due?'<b>Dena hai:</b> '+dfmt(l.due)+' — '+dueTag2(l.due)+'<br>':''}
+      ${l.rate?'<b>Byaaj:</b> '+l.rate+'% par mahina · ab tak <b style="color:var(--red)">'+fmt(byaaj)+'</b> jud gaya<br>':'<b>Byaaj:</b> nahi<br>'}
+      ${l.note?'<b>Note:</b> '+esc(l.note):''}
+    </div>
+  </div>
+  <div class="two">
+    <button class="btn" onclick="payForm('${id}')">💸 Payment likho</button>
+    <button class="btn ghost" onclick="liabForm('${id}')">✏️ Edit</button>
+  </div>
+  <h2 class="sec">Payment history</h2>
+  <div class="box">${rows.length?rows.map(r=>`<div class="item" onclick="delPay('${r.id}','${id}')" style="cursor:pointer">
+    <div class="em">✅</div><div class="grow"><div class="nm">Diya${r.note?' · <span style="font-weight:500">'+esc(r.note)+'</span>':''}</div>
+    <div class="sub">${dfmt(r.date)} · ${modeName(r.mode)} · <span class="mini">tap = delete</span></div></div>
+    <div class="amt in num">${fmt(r.amt)}</div></div>`).join('')
+    :`<div class="empty">Abhi koi payment nahi hui.</div>`}</div>`)}
+let PK='prin';
+function payForm(id){
+  const l=DB.liab.find(x=>x.id===id); if(!l)return;
+  const out=liabOut(l), A=allAccs(); PK='prin';
+  openSheet(`<div class="xrow"><h3>💸 ${esc(l.party)} ko diya</h3><button class="x" onclick="liabView('${id}')">‹</button></div>
+  <div class="box row between"><span>Abhi bakaya</span><b class="amt out num">${fmt(out)}</b></div>
+  <input class="bigamt num" id="p_amt" type="number" inputmode="decimal" placeholder="₹ Kitna diya">
+  <div class="chips">
+    <button class="chip" onclick="document.getElementById('p_amt').value=${Math.round(out)}">Poora ${fmt(out)}</button>
+    <button class="chip" onclick="document.getElementById('p_amt').value=${Math.round(out/2)}">Aadha</button>
+  </div>
+  <label class="f">YE KYA HAI</label>
+  <div class="chips" id="p_kinds">
+    <button class="chip on" onclick="PK='prin';pkSel(this)">💰 Mool rakam — udhaar kam hoga</button>
+    <button class="chip" onclick="PK='int';pkSel(this)">💸 Byaaj / fees — kharcha</button>
+  </div>
+  <label class="f">KAHAN SE DIYA</label>
+  <select id="p_mode">${A.map(a=>`<option value="${a.id}">${esc(a.nm)} — ${fmt(accBal(a.id))}</option>`).join('')}</select>
+  <label class="f">DATE</label>
+  <input id="p_date" type="date" value="${today()}">
+  <label class="f">NOTE (optional)</label>
+  <input id="p_note" placeholder="Kuch likhna ho toh">
+  <button class="btn" style="margin-top:14px" onclick="savePay('${id}')">💾 Save payment</button>
+  <div class="mini" style="margin-top:8px">💰 Mool rakam ka payment <b>kharcha nahi</b> hai — wo paisa pehle hi kharch ho chuka tha, ab sirf udhaar utar raha hai. Byaaj asli kharcha hai, wo mahine ke total me jayega.</div>`)}
+function pkSel(b){document.querySelectorAll('#p_kinds .chip').forEach(x=>x.classList.remove('on'));b.classList.add('on')}
+function savePay(id){
+  const l=DB.liab.find(x=>x.id===id); if(!l)return;
+  const amt=+document.getElementById('p_amt').value;
+  if(!amt||amt<=0)return toast('Rakam likho');
+  const mode=document.getElementById('p_mode').value,
+        date=document.getElementById('p_date').value||today(),
+        note=document.getElementById('p_note').value.trim();
+  if(PK==='int'){
+    let c=DB.cats.find(x=>x.nm==='Interest & Fees');
+    if(!c){c={id:uid(),nm:'Interest & Fees',em:'💸',bud:0};DB.cats.push(c)}
+    DB.exps.push({id:uid(),date,amt,cat:c.id,mode,who:'me',aud:false,
+      note:l.party+' byaaj'+(note?' · '+note:'')});
+    S();closeSheet();toast('💸 Byaaj '+fmt(amt)+' kharche me gaya');go('liab');return}
+  const out=liabOut(l);
+  if(amt>out+0.5&&!confirm('Bakaya sirf '+fmt(out)+' hai, aap '+fmt(amt)+' likh rahe ho.\n\nExtra '+fmt(amt-out)+' ko "byaaj / fees" chunkar likhna sahi rahega.\n\nPhir bhi save karein?'))return;
+  DB.repay.push({id:uid(),liabId:id,date,amt,mode,note});
+  S();closeSheet();
+  const nb=liabOut(l);
+  toast(nb<=0.5?'🎉 '+l.party+' ka udhaar poora khatam':'✅ '+fmt(amt)+' diya · ab bakaya '+fmt(nb));
+  go('liab')}
+function delPay(rid,lid){
+  if(!confirm('Ye payment entry delete karein?'))return;
+  DB.repay=DB.repay.filter(r=>r.id!==rid);S();liabView(lid);toast('🗑️ Hata diya')}
+
+/* ---- everything owed to one person, in one place ---- */
+function liabPartyView(i){
+  const p=LP[i]; if(!p)return;
+  const open=liabOpen().filter(l=>(l.party||'—')===p.nm).sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));
+  const done=DB.liab.filter(l=>(l.party||'—')===p.nm&&liabOut(l)<=0.5);
+  const byaaj=open.reduce((s,l)=>s+liabAccrued(l),0);
+  openSheet(`<div class="xrow"><h3>${p.em} ${esc(p.nm)}</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <div class="box row between"><span>Total dena hai</span><b class="amt out num" style="font-size:22px">${fmt(p.out)}</b></div>
+  ${byaaj>=1?`<div class="mini" style="margin:-4px 0 8px">+ ${fmt(byaaj)} byaaj jud chuka hai</div>`:''}
+  <div class="box">${open.map(l=>`<div class="item" onclick="liabView('${l.id}')" style="cursor:pointer">
+    <div class="em">📌</div><div class="grow"><div class="nm">${esc(l.why||'reason likha nahi')}</div>
+    <div class="sub">${dfmt(l.date)} se${l.rate?' · '+l.rate+'%/mo':''}${l.due?' · '+dueTag2(l.due):''}</div></div>
+    <div class="amt out num">${fmt(liabOut(l))}</div></div>`).join('')}</div>
+  ${done.length?`<h2 class="sec">✅ Chuka diya</h2><div class="box">${done.map(l=>
+    rowHTML('✅',esc(l.why||'—'),dfmt(l.date)+' · poora chuka diya',fmt(l.amt),'in')).join('')}</div>`:''}
+  <button class="btn ghost" style="margin-top:12px" onclick="waLiab(${i})">💬 Ye hisaab WhatsApp pe bhejo</button>`)}
+function waLiab(i){
+  const p=LP[i]; if(!p)return;
+  const open=liabOpen().filter(l=>(l.party||'—')===p.nm);
+  let t='*'+p.nm+'* — hisaab (as on '+dfmt(today())+')\n\n';
+  open.forEach(l=>{t+='• '+fmt(liabOut(l))+(l.why?'  ('+l.why+')':'')+(l.due?'  — '+dfmt(l.due)+' tak':'')+'\n'});
+  t+='\n*Total dena hai: '+fmt(p.out)+'*';
+  window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank')}
+
+/* ---- "as on <date>, kis-kis ka kitna bakaya tha" ---- */
+let AO=today();
+function asOnSheet(d){
+  AO=d||AO||today();
+  const list=DB.liab.filter(l=>l.date<=AO).map(l=>{
+    const pay=DB.repay.filter(r=>r.liabId===l.id&&r.date<=AO).reduce((s,r)=>s+ +r.amt,0);
+    return {l,out:Math.max(0,(+l.amt||0)-pay)}}).filter(x=>x.out>0.5);
+  const m={}; list.forEach(x=>{const k=x.l.party||'—';
+    if(!m[k])m[k]={out:0,whys:[]}; m[k].out+=x.out; if(x.l.why)m[k].whys.push(x.l.why)});
+  const rows=Object.keys(m).map(k=>({nm:k,...m[k]})).sort((a,b)=>b.out-a.out);
+  const tot=rows.reduce((s,r)=>s+r.out,0);
+  const cardTot=AO===today()?DB.cards.reduce((s,c)=>s+cardOut(c.id),0):0;
+  openSheet(`<div class="xrow"><h3>📅 As-on hisaab</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <input type="date" value="${AO}" onchange="asOnSheet(this.value)">
+  <div class="box" style="margin-top:10px">
+    <div class="mini">${dfmt(AO)} ko mujhe kis-kis ka dena tha</div>
+    <div class="amt out num" style="font-size:26px;margin-top:4px">${fmt(tot+cardTot)}</div>
+    ${cardTot?`<div class="mini">isme ${fmt(cardTot)} credit card ka hai</div>`:''}
+  </div>
+  <div class="box">${rows.length?rows.map(r=>rowHTML('👤',esc(r.nm),
+    esc([...new Set(r.whys)].join(', ')||'reason likha nahi'),fmt(r.out),'out')).join('')
+    :`<div class="empty">Us tareekh tak koi udhaar likha nahi tha.</div>`}</div>
+  <div class="two">
+    <button class="btn ghost" onclick="waAsOn()">💬 WhatsApp</button>
+    <button class="btn ghost" onclick="window.print()">🖨️ Print / PDF</button>
+  </div>`)}
+function waAsOn(){
+  const list=DB.liab.filter(l=>l.date<=AO).map(l=>{
+    const pay=DB.repay.filter(r=>r.liabId===l.id&&r.date<=AO).reduce((s,r)=>s+ +r.amt,0);
+    return {l,out:Math.max(0,(+l.amt||0)-pay)}}).filter(x=>x.out>0.5);
+  const m={}; list.forEach(x=>{const k=x.l.party||'—'; m[k]=(m[k]||0)+x.out});
+  let t='*Meri liabilities* — as on '+dfmt(AO)+'\n\n', tot=0;
+  Object.keys(m).sort((a,b)=>m[b]-m[a]).forEach(k=>{t+=k+' — '+fmt(m[k])+'\n';tot+=m[k]});
+  t+='\n*Total: '+fmt(tot)+'*';
+  window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank')}
+
+/* ---- the number he wants on the first screen ---- */
+function liabHomeHTML(){
+  const t=liabTotals(); if(!t.total&&!t.orig)return '';
+  const pct=t.orig?Math.round(t.paid/t.orig*100):0;
+  return `<div class="box" onclick="go('liab')" style="cursor:pointer;border-left:4px solid var(--red)">
+    <div class="row between"><b>💰 Total dena hai</b><span class="mini">tap for details ›</span></div>
+    <div class="amt out num" style="font-size:27px;margin:2px 0">${fmt(t.total)}</div>
+    ${t.orig?`<div class="bar" style="margin-top:4px"><i style="width:${Math.min(100,pct)}%"></i></div>
+    <div class="row between mini" style="margin-top:5px"><span>✅ ${fmt(t.paid)} utar chuka (${pct}%)</span>${t.late?`<span style="color:var(--red)">⏰ ${t.late} late</span>`:'<span></span>'}</div>`:''}
+  </div>`}
 
 /* ================= LEN-DEN (cash in/out + party ledger) ================= */
 let L={typ:'in',mode:'cash',why:'',due:''};
@@ -1128,7 +1464,7 @@ function drawBars(id,data,vert,budLine){
 function openSettings(){
   openSheet(`<div class="xrow"><h3>⚙️ Settings</h3><button class="x" onclick="closeSheet()">✕</button></div>
   <div class="box" style="padding:0">
-    ${setRow('💵','Cash & Budget', fmt(DB.cashOpen)+' · budget '+(DB.budget?fmt(DB.budget):'not set'),'setMoney')}
+    ${setRow('💵','Income, Cash & Budget', 'income '+(DB.income?fmt(DB.income):'not set')+' · budget '+(DB.budget?fmt(DB.budget):'not set'),'setMoney')}
     ${setRow('🏦','Banks', (DB.banks.length||'No')+' bank'+(DB.banks.length===1?'':'s'),'setBanks')}
     ${setRow('🏷️','Categories & budgets', DB.cats.length+' categories','setCats')}
     ${setRow('⚡','Shortcuts', (DB.tiles||[]).length+' quick buttons','manageTiles')}
@@ -1141,12 +1477,15 @@ function setRow(em,nm,sub,fn){
 function setBack(){openSettings()}
 function setMoney(){
   openSheet(`<div class="xrow"><h3>💵 Cash & Budget</h3><button class="x" onclick="setBack()">‹</button></div>
+  <label class="f">MONTHLY INCOME (salary + shop, jo har mahine aata hai)</label>
+  <input id="s_inc" type="number" inputmode="decimal" value="${DB.income||''}" placeholder="₹ har mahine ki aamdani">
   <label class="f">CASH OPENING BALANCE (in hand today)</label>
   <input id="s_cash" type="number" inputmode="decimal" value="${DB.cashOpen||''}" placeholder="₹">
   <label class="f">MONTHLY BUDGET (total)</label>
   <input id="s_bud" type="number" inputmode="decimal" value="${DB.budget||''}" placeholder="₹ target for the whole month">
   <button class="btn" style="margin-top:16px" onclick="saveMoney()">💾 Save</button>`)}
 function saveMoney(){
+  DB.income=+document.getElementById('s_inc').value||0;
   DB.cashOpen=+document.getElementById('s_cash').value||0;
   DB.budget=+document.getElementById('s_bud').value||0;
   S();closeSheet();toast('✅ Saved');go(CUR)}
