@@ -120,7 +120,7 @@ body.sheet-open #fab{display:none}
 <body>
 <header class="app">
   <div class="logo">₹</div>
-  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v17</span></h1>
+  <h1>EXPENSE MANAGER<span class="ver">PERSONAL · v18</span></h1>
   <button class="hbtn" onclick="openSettings()">⚙️</button>
 </header>
 <main id="main"></main>
@@ -149,6 +149,7 @@ let DB=JSON.parse(localStorage.getItem(LS)||'null')||{
   cashOpen:0, banks:[], cards:[], budget:0, income:0,
   cats:[],
 
+  inc:[],    // INCOME / inflow {id,date,amt,src,mode,note}
   liab:[],   // LIABILITIES {id,party,kind,amt,date,due,why,rate,note}  kind:'person'|'business'|'bank'|'other'
   repay:[],  // repayments against a liability {id,liabId,date,amt,mode,note}
 
@@ -177,7 +178,7 @@ const WANT_TILES=[
   {nm:'Shop expense',em:'🏪',cat:'Shop — PARAMPARA',who:'shop'}];
 function migrate(){
   DB.cats=DB.cats||[]; DB.tiles=DB.tiles||[]; DB.led=DB.led||[]; DB.exps=DB.exps||[];
-  DB.liab=DB.liab||[]; DB.repay=DB.repay||[]; DB.pays=DB.pays||[];
+  DB.liab=DB.liab||[]; DB.repay=DB.repay||[]; DB.pays=DB.pays||[]; DB.inc=DB.inc||[];
   // rename first, so the "do I already have it" check sees the new names
   DB.cats.forEach(c=>{ const nn=RENAME[String(c.nm).toLowerCase()];
     if(nn){ c.nm=nn; const w=WANT_CATS.find(x=>x.nm===nn); if(w)c.em=w.em; } });
@@ -234,6 +235,7 @@ function accBal(id){ // 'cash' or bankId
   DB.exps.forEach(e=>{if(e.mode===id)v-=+e.amt});
   DB.pays.forEach(p=>{if(p.from===id)v-=+p.amt});
   (DB.repay||[]).forEach(r=>{if(r.mode===id)v-=+r.amt});   // udhaar chukaya — paisa gaya
+  (DB.inc||[]).forEach(x=>{if(x.mode===id)v+=+x.amt});     // aamdani — paisa aaya
   return v}
 function cardOut(id){const c=cardById(id);if(!c)return 0;let v=+c.open||0;
   DB.exps.forEach(e=>{if(e.mode===id)v+=+e.amt});
@@ -266,6 +268,7 @@ function renderHome(){
   M().innerHTML=`
   <div class="strip">${strip}</div>
   ${liabHomeHTML()}
+  ${flowHomeHTML()}
   <div class="box" onclick="go('rep')" style="cursor:pointer">
     <div class="row between"><b>Spend — ${mlabel(mk)}</b><span class="amt out num">${fmt(sp)} ›</span></div>
     ${bud?`<div style="margin-top:8px" class="bar"><i class="${sp>bud?'over':''}" style="width:${pct}%"></i></div>
@@ -369,11 +372,16 @@ function lenDenHTML(){
     ${od.length?`<div class="mini" style="margin-top:8px;color:var(--red)">⏰ ${od.length} entry ki return date nikal chuki hai</div>`:''}
   </div>`}
 function lastEntriesHTML(n){
-  const all=[...DB.exps.map(e=>({...e,_k:'e'})),...DB.led.map(l=>({...l,_k:'l'})),...DB.pays.map(p=>({...p,_k:'p'}))]
+  const all=[...DB.exps.map(e=>({...e,_k:'e'})),...DB.led.map(l=>({...l,_k:'l'})),...DB.pays.map(p=>({...p,_k:'p'})),
+    ...(DB.inc||[]).map(x=>({...x,_k:'i'})),
+    ...(DB.repay||[]).map(r=>({...r,_k:'r'}))]
    .sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id)).slice(0,n);
   if(!all.length)return`<div class="empty">No entries yet.<br>First set your opening balances in ⚙️ Settings, then start adding expenses.</div>`;
   return all.map(x=>{
     if(x._k==='e')return expRow(x);
+    if(x._k==='i')return rowHTML(incEm(x.src),esc(x.src),dfmt(x.date)+' · '+modeName(x.mode)+(x.note?' · '+esc(x.note):''),'+'+fmt(x.amt),'in');
+    if(x._k==='r'){const l=DB.liab.find(y=>y.id===x.liabId)||{};
+      return rowHTML('💰',esc(l.party||'Udhaar')+' ko chukaya',dfmt(x.date)+' · '+modeName(x.mode),'-'+fmt(x.amt),'out')}
     if(x._k==='l'){
       if(x.typ==='xfer')return rowHTML('🔄',esc(modeName(x.from))+' → '+esc(modeName(x.to)),dfmt(x.date)+' · transfer',fmt(x.amt),'');
       return rowHTML(x.typ==='in'?'⬇️':'⬆️',esc(x.party||'—')+(x.why?' · '+esc(x.why):''),dfmt(x.date)+' · '+modeName(x.mode)+(x.note?' · '+esc(x.note):''),(x.typ==='in'?'+':'-')+fmt(x.amt),x.typ==='in'?'in':'out')}
@@ -433,27 +441,42 @@ function tileSave(id){
 function tileDel(id){
   if(!confirm('Delete this shortcut?'))return;
   DB.tiles=(DB.tiles||[]).filter(t=>t.id!==id);S();toast('✅ Deleted');manageTiles()}
+let EM='out';
 function renderExp(){
   const mk=mkey();
   const c=DB.cats.find(x=>x.id===F.cat);
   const label = F.tileNm ? F.tileNm : (c? c.em+' '+esc(c.nm) : '🏷️ Kis cheez ka kharcha?');
+  const tabs=`<div class="tabs">
+    <button class="${EM==='out'?'on':''}" onclick="EM='out';renderExp()">⬆️ Kharcha</button>
+    <button class="${EM==='in'?'on':''}" onclick="EM='in';renderExp()">⬇️ Paisa aaya</button></div>`;
+  if(EM==='in'){
+    const tot=DB.inc.filter(x=>mkey(x.date)===mk).reduce((s,x)=>s+ +x.amt,0);
+    M().innerHTML=`<div class="box">${tabs}${incFormHTML()}</div>
+    <h2 class="sec">${mlabel(mk)} — aaya ${fmt(tot)}</h2>
+    <div class="box">${incListHTML(mk)}</div>`;
+    return}
   M().innerHTML=`
   <div class="box" id="expForm">
+    ${tabs}
+    ${freqHTML()}
     <input class="bigamt num" id="e_amt" type="number" inputmode="decimal" placeholder="₹ Amount spent" autofocus>
+    <div class="chips">${[100,500,1000,5000].map(v=>`<button class="chip" onclick="bump('e_amt',${v})">+${v>=1000?(v/1000)+'k':v}</button>`).join('')}
+      <button class="chip" onclick="document.getElementById('e_amt').value=''">✕ clear</button></div>
     <label class="f">PAID FROM</label>
     <div class="chips" id="e_modes">${modeChips()}</div>
     <label class="f">WHAT FOR</label>
     <button class="chip block ${F.cat?'on':''}" style="width:100%;text-align:left;padding:13px 14px" onclick="pickCat()">
       ${label}${F.who==='shop'?' <span style="opacity:.8">· 🏪 Shop</span>':''}</button>
     <div class="row" style="margin-top:10px;gap:8px">
-      <input id="e_note" placeholder="Note (optional)" class="grow">
+      <input id="e_note" placeholder="Note — likho to category khud lag jayegi" class="grow" onblur="noteGuess()">
       <button class="mic" id="e_mic" onclick="toggleRec()">🎙️</button>
     </div>
     <div class="mini hide" id="e_recmsg" style="margin-top:6px">🔴 Recording... tap the mic again to stop</div>
     <div class="mini hide" id="e_hasaud" style="margin-top:6px">✅ Voice note attached <button class="btn sm red" style="padding:3px 9px;font-size:11px" onclick="dropRec()">✕ Remove</button></div>
     <div class="row" style="margin-top:12px;gap:8px">
       <input id="e_date" type="date" value="${today()}" style="max-width:150px">
-      <button class="btn grow" onclick="saveExp()">💾 Save expense</button>
+      <button class="btn grow" onclick="saveExp()">💾 Save</button>
+      <button class="btn ghost" onclick="saveExp(1)" title="Save and keep going">➕ &amp; aur</button>
     </div>
   </div>
   <h2 class="sec">${mlabel(mk)} — ${fmt(monthSpend(mk))}</h2>
@@ -559,16 +582,18 @@ function saveExpEdit(id){
   e.cat=document.getElementById('ee_cat').value; e.who=document.getElementById('ee_who').value;
   e.note=document.getElementById('ee_note').value.trim(); e.date=document.getElementById('ee_date').value||e.date;
   S();closeSheet();toast('✅ Updated');go(CUR)}
-function saveExp(){
+function saveExp(again){
   const amt=+document.getElementById('e_amt').value;
   if(!amt||amt<=0)return toast('Enter the amount');
-  if(!F.cat)return toast('Select a category');
+  if(!F.cat&&!(F.cat=guessCat(document.getElementById('e_note').value)))return toast('Select a category');
   const id=uid();
   DB.exps.push({id,date:document.getElementById('e_date').value||today(),amt,cat:F.cat,mode:F.mode,
     note:document.getElementById('e_note').value.trim(),aud:!!F.aud,who:F.who||'me'});
   if(F.aud)audPut(id,F.aud);
-  S();F={cat:null,mode:F.mode,aud:null,who:'me',tile:null,tileNm:''};
-  toast('✅ Expense saved — '+fmt(amt));renderExp()}
+  S();
+  F=again?{cat:F.cat,mode:F.mode,aud:null,who:F.who,tile:F.tile,tileNm:F.tileNm}
+         :{cat:null,mode:F.mode,aud:null,who:'me',tile:null,tileNm:''};
+  toast('✅ '+fmt(amt)+' saved'+(again?' — agli entry likho':''));renderExp()}
 function delExp(id){if(!confirm('Delete this expense?'))return;
   DB.exps=DB.exps.filter(e=>e.id!==id);audDel(id);S();closeSheet();toast('Deleted');go(CUR)}
 
@@ -626,6 +651,190 @@ async function toggleRec(){
   }catch(err){toast('Microphone permission denied')}}
 function dropRec(){F.aud=null;document.getElementById('e_hasaud').classList.add('hide')}
 
+/* ================= CASH IN — income & inflow =================
+   Kharcha ka hisaab tha, aamdani ka nahi. Aadha hisaab kabhi match nahi karta.
+   Har rupya jo andar aata hai — shop sale, salary, kisi ka diya wapas — yahan
+   likha jayega, aur wahi cashflow report ki reedh hai. */
+const INCSRC=[{nm:'Shop sale',em:'🏪'},{nm:'Salary',em:'💼'},{nm:'Udhaar wapas',em:'🤝'},
+              {nm:'Rent',em:'🏠'},{nm:'Gift',em:'🎁'},{nm:'Other',em:'📈'}];
+const incEm=s=>(INCSRC.find(x=>x.nm===s)||{em:'📈'}).em;
+function isCashAcc(m){return m==='cash'||!!bankById(m)}
+let IF={src:'Shop sale',mode:'cash'};
+function incFormHTML(){
+  return `<input class="bigamt num" id="i_amt" type="number" inputmode="decimal" placeholder="₹ Kitna aaya" autofocus>
+  <div class="chips">${[500,1000,5000,10000].map(v=>`<button class="chip" onclick="bump('i_amt',${v})">+${v/1000>=1?(v/1000)+'k':v}</button>`).join('')}
+    <button class="chip" onclick="document.getElementById('i_amt').value=''">✕ clear</button></div>
+  <label class="f">KAHAN AAYA</label>
+  <div class="chips" id="i_modes">
+    <button class="chip ${IF.mode==='cash'?'on':''}" onclick="IF.mode='cash';chipSel('#i_modes',this)">💵 Cash</button>
+    ${DB.banks.map(b=>`<button class="chip ${IF.mode===b.id?'on':''}" onclick="IF.mode='${b.id}';chipSel('#i_modes',this)">🏦 ${esc(b.nm)}</button>`).join('')}
+  </div>
+  <label class="f">KAHAN SE AAYA</label>
+  <div class="chips" id="i_srcs">${INCSRC.map(s=>`<button class="chip ${IF.src===s.nm?'on':''}" onclick="IF.src='${s.nm}';chipSel('#i_srcs',this)">${s.em} ${s.nm}</button>`).join('')}</div>
+  <input id="i_note" placeholder="Note (optional)" style="margin-top:10px">
+  <div class="row" style="margin-top:12px;gap:8px">
+    <input id="i_date" type="date" value="${today()}" style="max-width:150px">
+    <button class="btn grow" onclick="saveInc()">💾 Save inflow</button>
+  </div>
+  <div class="mini" style="margin-top:8px">⬇️ Ye <b>aamdani</b> hai — cash/bank balance badhega. Kisi se <b>udhaar liya</b> hai to yahan nahi, 💰 Udhaar tab me likho (warna liability chhoot jayegi).</div>`}
+function chipSel(sel,b){document.querySelectorAll(sel+' .chip').forEach(x=>x.classList.remove('on'));b.classList.add('on')}
+function bump(id,v){const el=document.getElementById(id);el.value=(+el.value||0)+v}
+function saveInc(){
+  const amt=+document.getElementById('i_amt').value;
+  if(!amt||amt<=0)return toast('Rakam likho');
+  DB.inc.push({id:uid(),date:document.getElementById('i_date').value||today(),amt,
+    src:IF.src,mode:IF.mode,note:document.getElementById('i_note').value.trim()});
+  S();toast('⬇️ '+fmt(amt)+' aaya — '+IF.src);renderExp()}
+function delInc(id){if(!confirm('Ye inflow entry delete karein?'))return;
+  DB.inc=DB.inc.filter(x=>x.id!==id);S();closeSheet();go(CUR)}
+function incView(id){const x=DB.inc.find(i=>i.id===id); if(!x)return;
+  openSheet(`<div class="xrow"><h3>⬇️ ${esc(x.src)}</h3><button class="x" onclick="closeSheet()">✕</button></div>
+  <div class="box"><div class="row between"><span>Amount</span><b class="amt in num">+${fmt(x.amt)}</b></div>
+  <div class="mini" style="margin-top:8px">${dfmt(x.date)} · ${modeName(x.mode)}${x.note?'<br>'+esc(x.note):''}</div></div>
+  <button class="btn red" onclick="delInc('${x.id}')">🗑️ Delete</button>`)}
+function incListHTML(mk){
+  const L=DB.inc.filter(x=>mkey(x.date)===mk).sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+  if(!L.length)return`<div class="empty">Is mahine koi aamdani likhi nahi gayi.</div>`;
+  return L.map(x=>`<div class="item" onclick="incView('${x.id}')" style="cursor:pointer">
+    <div class="em">${incEm(x.src)}</div>
+    <div class="grow"><div class="nm">${esc(x.src)}</div>
+      <div class="sub">${dfmt(x.date)} · ${modeName(x.mode)}${x.note?' · '+esc(x.note):''}</div></div>
+    <div class="amt in num">+${fmt(x.amt)}</div></div>`).join('')}
+
+/* ================= SMART ENTRY =================
+   Wahi kharche har hafte lautte hain. Unko dobara type karana bekaar hai — jo cheez
+   do baar ho chuki hai wo ek tap ka button ban jati hai, poori entry ke saath. */
+let FQ=[];
+function freqEntries(){
+  const cut=new Date(Date.now()-75*86400000).toISOString().slice(0,10);
+  const m={};
+  DB.exps.filter(e=>e.date>=cut).forEach(e=>{
+    const k=(e.cat||'')+'|'+((e.note||'').trim().toLowerCase());
+    if(!m[k])m[k]={cat:e.cat,note:(e.note||'').trim(),who:e.who||'me',mode:e.mode,n:0,amts:[]};
+    m[k].n++; m[k].amts.push(+e.amt); m[k].mode=e.mode;});
+  FQ=Object.values(m).filter(x=>x.n>=2&&x.cat).sort((a,b)=>b.n-a.n).slice(0,6)
+    .map(x=>{const c={};x.amts.forEach(a=>c[a]=(c[a]||0)+1);
+      const top=Object.keys(c).sort((a,b)=>c[b]-c[a]||b-a)[0];
+      return {...x,amt:+top}});
+  return FQ}
+function useFreq(i){
+  const f=FQ[i]; if(!f)return;
+  F.cat=f.cat; F.who=f.who; F.mode=f.mode; F.tile=null;
+  const c=DB.cats.find(x=>x.id===f.cat); F.tileNm=c?c.em+' '+c.nm:'';
+  F._amt=String(f.amt); F._note=f.note;
+  restoreExpForm()}
+function freqHTML(){
+  const L=freqEntries(); if(!L.length)return '';
+  return `<div class="mini" style="margin:2px 2px 6px">⚡ Ek tap — poori entry bhar jayegi</div>
+  <div class="chips" style="margin-bottom:10px">${L.map((f,i)=>{const c=DB.cats.find(x=>x.id===f.cat)||{em:'📦',nm:''};
+    return `<button class="chip" onclick="useFreq(${i})">${c.em} ${esc(f.note||c.nm)} · ${fmt(f.amt)}</button>`}).join('')}</div>`}
+/* Note me likhe shabd se category khud pehchan lena — har baar list kholna na pade. */
+const KW={'Groceries':['sabzi','sabji','doodh','milk','kirana','grocery','atta','chawal','rice','dal','tel','bigbasket','blinkit','zepto','dmart','ration'],
+'Food & Dining':['khana','chai','hotel','restaurant','swiggy','zomato','tiffin','nashta','pizza','cafe','biryani','snack'],
+'Transport':['petrol','diesel','uber','ola','auto','rickshaw','taxi','bus','train','metro','fuel','parking','cab','toll'],
+'Utilities & Bills':['bijli','electric','current','gas','cylinder','recharge','mobile','internet','wifi','broadband','dth','water','pani','bill'],
+'School Fees':['school','fees','tuition','coaching','copy','uniform','admission'],
+'Health':['doctor','medicine','dawa','hospital','clinic','medical','pharmacy','checkup','dawai'],
+'Household':['maid','bai','plumber','electrician','furniture','repair','safai','carpenter'],
+'Family':['shaadi','wedding','birthday','gift','mummy','papa','bhai','behen','rishtedaar'],
+'Shopping':['kapda','clothes','shoes','amazon','flipkart','myntra','shopping','jutta'],
+'EMI & Loans':['emi','loan','installment','kist'],
+'Interest & Fees':['byaaj','interest','fees','charge','penalty','late fee'],
+'Shop — PARAMPARA':['dukan','staff','karigar','labour','maal','stock','packing','godown','shop']};
+/* Poora shabd match hona chahiye — warna "dala" ko "dal" samajh kar Groceries me daal dega. */
+const KWRE={};
+function guessCat(txt){
+  const s=(txt||'').toLowerCase(); if(!s)return null;
+  for(const nm in KW){
+    if(!KWRE[nm])KWRE[nm]=new RegExp('\\b('+KW[nm].map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')\\b');
+    if(KWRE[nm].test(s)){const c=DB.cats.find(x=>x.nm.toLowerCase()===nm.toLowerCase()); if(c)return c.id} }
+  return null}
+function noteGuess(){
+  if(F.cat)return;
+  const n=document.getElementById('e_note'); if(!n)return;
+  const id=guessCat(n.value); if(!id)return;
+  const a=document.getElementById('e_amt');
+  F.cat=id; F._amt=a?a.value:''; F._note=n.value; F.tile=null; F.tileNm='';
+  restoreExpForm();
+  const c=DB.cats.find(x=>x.id===id); toast('🏷️ '+c.em+' '+c.nm+' — badalna ho to tap karo')}
+
+/* ================= CASHFLOW =================
+   Balance sirf ek number hai. Sawal ye hai: mahine bhar me kitna aaya, kitna gaya,
+   aur farak kahan gaya. Card ka kharcha cash nahi nikalta — isliye alag rakha gaya hai. */
+function cashOn(d){
+  let v=(+DB.cashOpen||0)+DB.banks.reduce((s,b)=>s+(+b.open||0),0);
+  const ok=x=>x.date<=d;
+  (DB.inc||[]).filter(ok).forEach(x=>{if(isCashAcc(x.mode))v+=+x.amt});
+  DB.exps.filter(ok).forEach(e=>{if(isCashAcc(e.mode))v-=+e.amt});
+  (DB.repay||[]).filter(ok).forEach(r=>{if(isCashAcc(r.mode))v-=+r.amt});
+  DB.pays.filter(ok).forEach(p=>{if(isCashAcc(p.from))v-=+p.amt});
+  DB.led.filter(ok).forEach(l=>{ if(l.typ==='xfer'||!isCashAcc(l.mode))return;
+    v+=l.typ==='in'?+l.amt:-l.amt});
+  return v}
+const mEnd=mk=>{const d=new Date(mk+'-01');d.setMonth(d.getMonth()+1);d.setDate(0);return d.toISOString().slice(0,10)};
+const mStartPrev=mk=>{const d=new Date(mk+'-01');d.setDate(0);return d.toISOString().slice(0,10)};
+function flowMonth(mk){
+  const inM=x=>mkey(x.date)===mk;
+  const f={inc:0,bySrc:{},exp:0,expCash:0,expCard:0,repaid:0,cardPaid:0,ledIn:0,ledOut:0};
+  (DB.inc||[]).filter(inM).forEach(x=>{ if(!isCashAcc(x.mode))return;
+    f.inc+=+x.amt; const k=x.src||'Other'; f.bySrc[k]=(f.bySrc[k]||0)+ +x.amt});
+  DB.exps.filter(inM).forEach(e=>{f.exp+=+e.amt; if(isCashAcc(e.mode))f.expCash+=+e.amt; else f.expCard+=+e.amt});
+  (DB.repay||[]).filter(inM).forEach(r=>{if(isCashAcc(r.mode))f.repaid+=+r.amt});
+  DB.pays.filter(inM).forEach(p=>{if(isCashAcc(p.from))f.cardPaid+=+p.amt});
+  DB.led.filter(inM).forEach(l=>{ if(l.typ==='xfer'||!isCashAcc(l.mode))return;
+    if(l.typ==='in')f.ledIn+=+l.amt; else f.ledOut+=+l.amt});
+  f.in=f.inc+f.ledIn;
+  f.out=f.expCash+f.repaid+f.cardPaid+f.ledOut;
+  f.net=f.in-f.out;
+  f.open=cashOn(mStartPrev(mk)); f.close=cashOn(mEnd(mk));
+  f.rate=f.in?Math.round(f.net/f.in*100):0;
+  return f}
+function flowHTML(mk){
+  const f=flowMonth(mk);
+  if(!f.in&&!f.out)return `<div class="box"><div class="empty">Is mahine ka cashflow banane ke liye pehle aamdani likho — 🧾 Expenses → ⬇️ Paisa aaya.</div></div>`;
+  const row=(em,nm,v,cls)=>`<div class="item"><div class="em">${em}</div><div class="grow"><div class="nm">${nm}</div></div><div class="amt ${cls} num">${cls==='in'?'+':'−'}${fmt(v)}</div></div>`;
+  return `<div class="box">
+    <div class="row between"><div><div class="mini">Aaya</div><b class="amt in num" style="font-size:19px">${fmt(f.in)}</b></div>
+      <div style="text-align:center"><div class="mini">Gaya</div><b class="amt out num" style="font-size:19px">${fmt(f.out)}</b></div>
+      <div class="right"><div class="mini">${f.net<0?'Ghata':'Bacha'}</div><b class="amt ${f.net<0?'out':'in'} num" style="font-size:19px">${fmt(Math.abs(f.net))}</b></div></div>
+    ${f.in?`<div class="bar" style="margin-top:10px"><i class="${f.net<0?'over':''}" style="width:${Math.min(100,f.out/f.in*100)}%"></i></div>
+    <div class="mini" style="margin-top:5px">${f.net<0
+      ?'⚠️ Jitna aaya usse '+fmt(-f.net)+' zyada gaya — yahin se naya udhaar banta hai.'
+      :'👍 Jo aaya usme se '+f.rate+'% bach gaya.'}</div>`:''}
+  </div>
+  <div class="box">
+    <div class="mini" style="padding:2px 2px 8px">Cash + Bank ka poora milan</div>
+    <div class="row between"><span>Mahine ke shuru me tha</span><b class="num">${fmt(f.open)}</b></div>
+    ${f.inc?row('⬇️','Aamdani',f.inc,'in'):''}
+    ${f.ledIn?row('🤝','Kisi se mila / udhaar aaya',f.ledIn,'in'):''}
+    ${f.expCash?row('🧾','Kharche (cash/bank se)',f.expCash,'out'):''}
+    ${f.repaid?row('💰','Udhaar chukaya',f.repaid,'out'):''}
+    ${f.cardPaid?row('💳','Card bill bhara',f.cardPaid,'out'):''}
+    ${f.ledOut?row('⬆️','Kisi ko diya',f.ledOut,'out'):''}
+    <div class="row between" style="border-top:1.5px solid var(--line);margin-top:8px;padding-top:8px">
+      <b>Mahine ke aakhir me bacha</b><b class="num" style="font-size:17px">${fmt(f.close)}</b></div>
+    ${f.expCard?`<div class="mini" style="margin-top:8px">💳 ${fmt(f.expCard)} card se kharcha hua — abhi cash nahi gaya, wo bill me aayega.</div>`:''}
+  </div>
+  ${Object.keys(f.bySrc).length?`<h2 class="sec">Paisa kahan se aaya</h2>
+  <div class="box">${Object.keys(f.bySrc).sort((a,b)=>f.bySrc[b]-f.bySrc[a]).map(k=>`
+    <div style="padding:7px 2px">
+      <div class="row between"><span>${incEm(k)} ${esc(k)}</span>
+        <span class="num">${fmt(f.bySrc[k])} <span class="mini">${Math.round(f.bySrc[k]/f.inc*100)}%</span></span></div>
+      <div class="bar" style="height:6px;margin-top:4px"><i style="width:${Math.round(f.bySrc[k]/f.inc*100)}%"></i></div>
+    </div>`).join('')}</div>`:''}`}
+/* Home ke liye ek line — aaj kaise chal raha hai. */
+function flowHomeHTML(){
+  const f=flowMonth(mkey());
+  if(!f.in&&!f.out)return '';
+  return `<div class="box" onclick="go('rep')" style="cursor:pointer">
+    <div class="row between"><b>🔄 Is mahine ka cashflow</b><span class="mini">tap ›</span></div>
+    <div class="row between" style="margin-top:8px">
+      <div><div class="mini">Aaya</div><b class="amt in num">${fmt(f.in)}</b></div>
+      <div style="text-align:center"><div class="mini">Gaya</div><b class="amt out num">${fmt(f.out)}</b></div>
+      <div class="right"><div class="mini">${f.net<0?'Ghata':'Bacha'}</div><b class="amt ${f.net<0?'out':'in'} num">${fmt(Math.abs(f.net))}</b></div>
+    </div>
+  </div>`}
+
 /* ================= LIABILITIES — udhaar ka asli hisaab =================
    The ledger only ever knew *transactions*. But a liability is a standing fact:
    "Alok ko 50,000 dena hai." He must be able to write that down in ten seconds,
@@ -672,7 +881,9 @@ function liabParties(){
 /* Income minus what the house actually eats — the only honest answer to
    "how much can I put on the debt this month". */
 function capacity(){
-  const inc=+DB.income||0, mk=mkey();
+  const mk=mkey();
+  const real=(DB.inc||[]).filter(x=>mkey(x.date)===mk).reduce((s,x)=>s+ +x.amt,0);
+  const inc=real||+DB.income||0;
   const ghar=DB.exps.filter(e=>mkey(e.date)===mk&&e.who!=='shop').reduce((s,e)=>s+ +e.amt,0);
   const shop=DB.exps.filter(e=>mkey(e.date)===mk&&e.who==='shop').reduce((s,e)=>s+ +e.amt,0);
   const paid=DB.repay.filter(r=>mkey(r.date)===mk).reduce((s,r)=>s+ +r.amt,0);
@@ -1111,6 +1322,10 @@ function accLines(id){
     if(l.mode!==id)return;
     out.push({date:l.date,em:l.typ==='in'?'⬇️':'⬆️',nm:(l.party||'—')+(l.why?' · '+l.why:''),
       sub:l.typ==='in'?'Received':'Given',amt:l.typ==='in'?+l.amt:-l.amt}); });
+  (DB.inc||[]).forEach(x=>{ if(x.mode!==id)return;
+    out.push({date:x.date,em:incEm(x.src),nm:x.src+(x.note?' · '+x.note:''),sub:'Aamdani',amt:+x.amt}); });
+  (DB.repay||[]).forEach(r=>{ if(r.mode!==id)return; const l=DB.liab.find(y=>y.id===r.liabId)||{};
+    out.push({date:r.date,em:'💰',nm:(l.party||'Udhaar')+' ko chukaya',sub:'Repayment',amt:-r.amt}); });
   DB.pays.forEach(pp=>{
     if(pp.from===id)out.push({date:pp.date,em:'💳',nm:'Card payment · '+((cardById(pp.cardId)||{}).nm||''),sub:'Paid out',amt:-pp.amt});
     if(pp.cardId===id)out.push({date:pp.date,em:'✅',nm:'Bill payment received',sub:'Reduces outstanding',amt:-pp.amt}); });
@@ -1342,6 +1557,8 @@ function renderRep(){
     </div>
     ${shopSplit(mk)}
   </div>
+  <h2 class="sec">🔄 Cashflow — aaya vs gaya</h2>
+  ${flowHTML(mk)}
   <h2 class="sec">Category-wise spend</h2>
   <div class="box"><canvas id="cv1" height="0"></canvas>
   ${cats.length?cats.map(c=>{const cb=+c.bud||0;const over=cb&&c.v>cb;
@@ -1374,7 +1591,19 @@ function repPrint(){
   th{text-align:left;border-bottom:2px solid #123B2A;padding:6px 4px;font-size:11px;text-transform:uppercase}
   td{border-bottom:1px solid #E4DFD2;padding:6px 4px}
   .r{text-align:right;font-variant-numeric:tabular-nums}</style></head><body>
-  <h1>Expense report — ${mlabel(mk)}</h1><div class="sub">printed ${dfmt(today())}</div>
+  <h1>Cashflow &amp; expense report — ${mlabel(mk)}</h1><div class="sub">printed ${dfmt(today())}</div>
+  ${(()=>{const f=flowMonth(mk); if(!f.in&&!f.out)return '';
+    return `<table style="margin-bottom:16px">
+    <tr><th>Cashflow</th><th class="r">Amount</th></tr>
+    <tr><td>Opening (cash + bank)</td><td class="r">${fmt(f.open)}</td></tr>
+    <tr><td>Aamdani</td><td class="r">+${fmt(f.inc)}</td></tr>
+    ${f.ledIn?`<tr><td>Kisi se mila</td><td class="r">+${fmt(f.ledIn)}</td></tr>`:''}
+    <tr><td>Kharche (cash/bank)</td><td class="r">−${fmt(f.expCash)}</td></tr>
+    ${f.repaid?`<tr><td>Udhaar chukaya</td><td class="r">−${fmt(f.repaid)}</td></tr>`:''}
+    ${f.cardPaid?`<tr><td>Card bill</td><td class="r">−${fmt(f.cardPaid)}</td></tr>`:''}
+    ${f.ledOut?`<tr><td>Kisi ko diya</td><td class="r">−${fmt(f.ledOut)}</td></tr>`:''}
+    <tr><td><b>Closing (cash + bank)</b></td><td class="r"><b>${fmt(f.close)}</b></td></tr>
+    </table>`})()}
   <table><tr><th>Category</th><th class="r">Amount</th><th class="r">Share</th></tr>
   ${cats.map(c=>`<tr><td>${c.em} ${esc(c.nm)}</td><td class="r">${fmt(c.v)}</td>
     <td class="r">${sp?Math.round(c.v/sp*100):0}%</td></tr>`).join('')}
